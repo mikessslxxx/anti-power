@@ -1,0 +1,290 @@
+<!doctype html>
+<html>
+
+<head>
+  <style>
+    #react-app #chat table tbody {
+      color: var(--codeium-text-color) !important;
+    }
+
+    /* 复制按钮样式 - 与Good/Bad按钮保持一致 */
+    .custom-copy-btn {
+      display: flex;
+      align-items: center;
+      gap: 0.25rem;
+      transition: opacity 0.1s, transform 0.1s;
+      cursor: pointer;
+      opacity: 0.7;
+    }
+
+    .custom-copy-btn:hover {
+      opacity: 1;
+    }
+
+    .custom-copy-btn span {
+      opacity: 0.7;
+    }
+
+    .custom-copy-btn svg {
+      height: 1rem;
+      width: 1rem;
+    }
+
+    .custom-copy-btn.copied {
+      opacity: 1;
+      color: #22c55e;
+    }
+  </style>
+</head>
+
+<body style="margin: 0">
+  <div id="react-app" class="react-app-container"></div>
+
+  <script>
+    // 复制图标SVG
+    const copyIconSVG = `<svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" class="h-4 w-4">
+      <path stroke-linecap="round" stroke-linejoin="round" d="M15.666 3.888A2.25 2.25 0 0 0 13.5 2.25h-3c-1.03 0-1.9.693-2.166 1.638m7.332 0c.055.194.084.4.084.612v0a.75.75 0 0 1-.75.75H9.75a.75.75 0 0 1-.75-.75v0c0-.212.03-.418.084-.612m7.332 0c.646.049 1.288.11 1.927.184 1.1.128 1.907 1.077 1.907 2.185V19.5a2.25 2.25 0 0 1-2.25 2.25H6.75A2.25 2.25 0 0 1 4.5 19.5V6.257c0-1.108.806-2.057 1.907-2.185a48.208 48.208 0 0 1 1.927-.184" />
+    </svg>`;
+
+    // 已复制图标SVG（打勾）
+    const checkIconSVG = `<svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" class="h-4 w-4">
+      <path stroke-linecap="round" stroke-linejoin="round" d="M4.5 12.75l6 6 9-13.5" />
+    </svg>`;
+
+    // 提取格式化的内容（处理代码块）
+    function extractFormattedContent(element) {
+      let result = '';
+
+      // 遍历所有子节点
+      const walker = document.createTreeWalker(
+        element,
+        NodeFilter.SHOW_ELEMENT | NodeFilter.SHOW_TEXT,
+        null,
+        false
+      );
+
+      let currentNode;
+      let skipUntilEndOfCodeBlock = null;
+
+      while (currentNode = walker.nextNode()) {
+        // 跳过代码块内部的节点（我们会单独处理）
+        if (skipUntilEndOfCodeBlock && skipUntilEndOfCodeBlock.contains(currentNode)) {
+          continue;
+        }
+        skipUntilEndOfCodeBlock = null;
+
+        if (currentNode.nodeType === Node.TEXT_NODE) {
+          // 检查是否在代码块区域（包含语言名称的标题栏或代码内容区）
+          const parent = currentNode.parentElement;
+          if (parent) {
+            // 检查是否在 language-xxx 元素内部
+            if (parent.closest('[class*="language-"]')) {
+              continue; // 跳过，代码块会单独处理
+            }
+            // 检查是否在代码块标题栏（语言名称显示区域）
+            // 语言名称在 opacity-60 的div中，且是 pre 元素的兄弟节点的子节点
+            const parentClasses = parent.className || '';
+            const parentClassStr = typeof parentClasses === 'string' ? parentClasses : (parentClasses.baseVal || '');
+            if (parentClassStr.includes('opacity-60') && parent.closest('pre')?.previousElementSibling) {
+              continue; // 跳过标题栏中的语言名称
+            }
+            // 额外检查：如果文本内容就是常见的语言名称，且在代码块附近
+            const textContent = currentNode.textContent.trim();
+            const commonLangs = ['xml', 'html', 'css', 'javascript', 'typescript', 'python', 'java', 'json', 'bash', 'shell', 'sql', 'yaml', 'markdown', 'go', 'rust', 'c', 'cpp', 'csharp', 'php', 'ruby', 'swift', 'kotlin'];
+            if (commonLangs.includes(textContent.toLowerCase()) && parent.closest('pre')?.parentElement?.querySelector('[class*="language-"]')) {
+              continue; // 跳过语言标识文本
+            }
+          }
+          result += currentNode.textContent;
+        } else if (currentNode.nodeType === Node.ELEMENT_NODE) {
+          // 检查是否是代码块容器
+          const classStr = currentNode.className || '';
+          // className可能是SVGAnimatedString，需要转换为字符串
+          const classString = typeof classStr === 'string' ? classStr : (classStr.baseVal || '');
+          const langMatch = classString.match(/language-(\w+)/);
+
+          // 检查是否是表格
+          if (currentNode.tagName === 'TABLE') {
+            result += '\n' + extractTable(currentNode) + '\n';
+            skipUntilEndOfCodeBlock = currentNode;
+            continue;
+          }
+
+          // 有语言标识的代码块
+          if (langMatch) {
+            const lang = langMatch[1];
+            // 提取代码内容
+            const codeBlock = currentNode.querySelector('.code-block');
+            if (codeBlock) {
+              const lines = codeBlock.querySelectorAll('.line-content');
+              let codeContent = '';
+              lines.forEach((line, idx) => {
+                codeContent += line.textContent;
+                if (idx < lines.length - 1) codeContent += '\n';
+              });
+              result += '\n```' + lang + '\n' + codeContent + '\n```\n';
+              skipUntilEndOfCodeBlock = currentNode;
+            }
+          }
+
+          // 无语言标识的代码块（通过 aria-label="highlighted-code-" 或直接包含 .code-block）
+          const ariaLabel = currentNode.getAttribute('aria-label') || '';
+          if (ariaLabel.startsWith('highlighted-code') && !langMatch) {
+            const codeBlock = currentNode.querySelector('.code-block');
+            if (codeBlock) {
+              const lines = codeBlock.querySelectorAll('.line-content');
+              let codeContent = '';
+              lines.forEach((line, idx) => {
+                codeContent += line.textContent;
+                if (idx < lines.length - 1) codeContent += '\n';
+              });
+              result += '\n```\n' + codeContent + '\n```\n';
+              skipUntilEndOfCodeBlock = currentNode;
+            }
+          }
+        }
+      }
+
+      return result.trim();
+    }
+
+    // 提取表格为markdown格式
+    function extractTable(tableEl) {
+      let markdown = '';
+      const rows = tableEl.querySelectorAll('tr');
+
+      rows.forEach((row, rowIdx) => {
+        const cells = row.querySelectorAll('th, td');
+        const cellContents = [];
+
+        cells.forEach(cell => {
+          // 获取单元格文本，处理内部的code元素
+          let cellText = cell.innerText || cell.textContent;
+          cellText = cellText.trim().replace(/\n/g, ' ');
+          cellContents.push(cellText);
+        });
+
+        markdown += '| ' + cellContents.join(' | ') + ' |\n';
+
+        // 在表头后添加分隔行
+        if (rowIdx === 0 && row.querySelector('th')) {
+          markdown += '| ' + cellContents.map(() => '---').join(' | ') + ' |\n';
+        }
+      });
+
+      return markdown;
+    }
+
+    // 添加复制按钮的函数
+    function addCopyButtons() {
+      // 查找所有包含Good/Bad按钮的容器
+      const feedbackContainers = document.querySelectorAll('[data-tooltip-id^="up-"]');
+
+      feedbackContainers.forEach(goodBtn => {
+        // 获取父容器（包含Good和Bad按钮的flex容器）
+        const parentContainer = goodBtn.parentElement;
+        if (!parentContainer || parentContainer.querySelector('.custom-copy-btn')) {
+          return; // 已添加过复制按钮，跳过
+        }
+
+        // 向上查找消息内容区域
+        // 通常消息内容在包含反馈按钮的同级或父级元素附近
+        let messageContainer = parentContainer;
+        for (let i = 0; i < 10; i++) {
+          messageContainer = messageContainer.parentElement;
+          if (!messageContainer) break;
+        }
+
+        // 创建复制按钮
+        const copyBtn = document.createElement('div');
+        copyBtn.className = 'custom-copy-btn';
+        copyBtn.innerHTML = `<span>Copy</span>${copyIconSVG}`;
+
+        // 点击事件
+        copyBtn.addEventListener('click', async (e) => {
+          e.stopPropagation();
+
+          // 查找消息内容 - 向上遍历找到prose或markdown内容
+          let content = '';
+          let searchNode = parentContainer;
+
+          // 向上查找包含消息内容的容器
+          for (let i = 0; i < 20; i++) {
+            searchNode = searchNode.parentElement;
+            if (!searchNode) break;
+
+            // 查找所有 prose prose-sm 元素，取最后一个（最终返回文本）
+            const proseElements = searchNode.querySelectorAll('.prose.prose-sm');
+            if (proseElements.length > 0) {
+              // 取最后一个元素（最终返回文本总是在最后面）
+              const lastProse = proseElements[proseElements.length - 1];
+              content = extractFormattedContent(lastProse);
+              break;
+            }
+          }
+
+          if (!content) {
+            console.error('未找到消息内容');
+            return;
+          }
+
+          try {
+            // 使用备选复制方法（因为webview不支持clipboard API）
+            const textArea = document.createElement('textarea');
+            textArea.value = content.trim();
+            textArea.style.position = 'fixed';
+            textArea.style.left = '-9999px';
+            textArea.style.top = '-9999px';
+            document.body.appendChild(textArea);
+            textArea.focus();
+            textArea.select();
+
+            const successful = document.execCommand('copy');
+            document.body.removeChild(textArea);
+
+            if (!successful) {
+              throw new Error('execCommand copy 失败');
+            }
+
+            // 显示复制成功状态
+            copyBtn.innerHTML = `<span>Copied!</span>${checkIconSVG}`;
+            copyBtn.classList.add('copied');
+
+            // 2秒后恢复原状
+            setTimeout(() => {
+              copyBtn.innerHTML = `<span>Copy</span>${copyIconSVG}`;
+              copyBtn.classList.remove('copied');
+            }, 2000);
+          } catch (err) {
+            console.error('复制失败:', err);
+          }
+        });
+
+        // 将复制按钮插入到Good按钮之前
+        parentContainer.insertBefore(copyBtn, goodBtn);
+      });
+    }
+
+    // 使用MutationObserver监听DOM变化
+    const observer = new MutationObserver((mutations) => {
+      // 延迟执行以确保React渲染完成
+      setTimeout(addCopyButtons, 100);
+    });
+
+    // 等待react-app加载后开始观察
+    const waitForApp = setInterval(() => {
+      const app = document.getElementById('react-app');
+      if (app && app.children.length > 0) {
+        clearInterval(waitForApp);
+        observer.observe(app, {
+          childList: true,
+          subtree: true
+        });
+        // 初始执行一次
+        addCopyButtons();
+      }
+    }, 500);
+  </script>
+</body>
+
+</html>
