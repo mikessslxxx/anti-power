@@ -2,289 +2,659 @@
 <html>
 
 <head>
-  <style>
-    #react-app #chat table tbody {
-      color: var(--codeium-text-color) !important;
-    }
+    <style>
+        /* 表格样式 */
+        #react-app #chat table tbody {
+            color: var(--codeium-text-color) !important;
+        }
 
-    /* 复制按钮样式 - 与Good/Bad按钮保持一致 */
-    .custom-copy-btn {
-      display: flex;
-      align-items: center;
-      gap: 0.25rem;
-      transition: opacity 0.1s, transform 0.1s;
-      cursor: pointer;
-      opacity: 0.7;
-    }
+        /* 复制按钮样式 */
+        .custom-copy-btn {
+            display: flex;
+            align-items: center;
+            gap: 0.25rem;
+            padding: 2px 6px;
+            border: 1px solid var(--vscode-editorWidget-border, transparent);
+            border-radius: 4px;
+            background: var(--vscode-editorWidget-background, transparent);
+            color: var(--vscode-editorWidget-foreground, currentColor);
+            font-size: 12px;
+            line-height: 1.2;
+            transition: opacity 0.12s ease, transform 0.1s ease;
+            cursor: pointer;
+            opacity: 0.7;
+        }
 
-    .custom-copy-btn:hover {
-      opacity: 1;
-    }
+        .custom-copy-btn:hover {
+            opacity: 1;
+        }
 
-    .custom-copy-btn span {
-      opacity: 0.7;
-    }
+        .custom-copy-btn span {
+            opacity: 0.9;
+        }
 
-    .custom-copy-btn svg {
-      height: 1rem;
-      width: 1rem;
-    }
+        .custom-copy-btn svg {
+            height: 1rem;
+            width: 1rem;
+        }
 
-    .custom-copy-btn.copied {
-      opacity: 1;
-      color: #22c55e;
-    }
-  </style>
+        .custom-copy-btn.copied {
+            opacity: 1;
+            color: #22c55e;
+        }
+
+        /* 内容区域复制按钮 */
+        .cascade-copy-button {
+            position: absolute;
+            top: -2px;
+            right: 0;
+            display: flex;
+            align-items: center;
+            gap: 0.25rem;
+            padding: 2px 6px;
+            border: 1px solid var(--vscode-editorWidget-border, transparent);
+            border-radius: 4px;
+            background: var(--vscode-editorWidget-background, transparent);
+            color: var(--vscode-editorWidget-foreground, currentColor);
+            font-size: 12px;
+            line-height: 1.2;
+            opacity: 0;
+            transition: opacity 0.12s ease, transform 0.1s ease;
+            cursor: pointer;
+            z-index: 1;
+        }
+
+        [data-cascade-copy-bound='1']:hover .cascade-copy-button,
+        [data-cascade-copy-bound='1']:focus-within .cascade-copy-button {
+            opacity: 0.7;
+        }
+
+        .cascade-copy-button:hover {
+            opacity: 1 !important;
+        }
+
+        .cascade-copy-button svg {
+            height: 1rem;
+            width: 1rem;
+        }
+
+        .cascade-copy-button span {
+            opacity: 0.9;
+        }
+
+        .cascade-copy-button.copied {
+            color: #22c55e;
+            opacity: 1 !important;
+        }
+    </style>
 </head>
 
 <body style="margin: 0">
-  <div id="react-app" class="react-app-container"></div>
+    <div id="react-app" class="react-app-container"></div>
 
-  <script>
-    // 复制图标SVG
-    const copyIconSVG = `<svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" class="h-4 w-4">
-      <path stroke-linecap="round" stroke-linejoin="round" d="M15.666 3.888A2.25 2.25 0 0 0 13.5 2.25h-3c-1.03 0-1.9.693-2.166 1.638m7.332 0c.055.194.084.4.084.612v0a.75.75 0 0 1-.75.75H9.75a.75.75 0 0 1-.75-.75v0c0-.212.03-.418.084-.612m7.332 0c.646.049 1.288.11 1.927.184 1.1.128 1.907 1.077 1.907 2.185V19.5a2.25 2.25 0 0 1-2.25 2.25H6.75A2.25 2.25 0 0 1 4.5 19.5V6.257c0-1.108.806-2.057 1.907-2.185a48.208 48.208 0 0 1 1.927-.184" />
-    </svg>`;
+    <script>
+        (() => {
+            // === 常量定义 ===
+            const CONTENT_SELECTOR = '.prose, .prose-sm, [data-in-html-content]';
+            const BOUND_ATTR = 'data-cascade-copy-bound';
+            const BUTTON_CLASS = 'cascade-copy-button';
+            const MATH_ATTR = 'data-cascade-math-rendered';
+            const RAW_TEXT_PROP = '__cascadeRawText';
+            const MATH_HINT_RE = /\$\$|\\$$|\\$|\\begin\{|\$[^$\n]+\\$/;
 
-    // 已复制图标SVG（打勾）
-    const checkIconSVG = `<svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" class="h-4 w-4">
-      <path stroke-linecap="round" stroke-linejoin="round" d="M4.5 12.75l6 6 9-13.5" />
-    </svg>`;
+            // KaTeX CDN 配置
+            const KATEX_VERSION = '0.16.9';
+            const KATEX_BASE =
+                window.CASCADE_KATEX_BASE_URL ||
+                `https://cdn.jsdelivr.net/npm/katex@${KATEX_VERSION}/dist`;
+            const KATEX_CSS_URL = `${KATEX_BASE}/katex.min.css`;
+            const KATEX_JS_URL = `${KATEX_BASE}/katex.min.js`;
+            const KATEX_AUTO_URL = `${KATEX_BASE}/contrib/auto-render.min.js`;
 
-    // 提取格式化的内容（处理代码块）
-    function extractFormattedContent(element) {
-      let result = '';
+            // MathJax CDN 配置
+            const MATHJAX_URL =
+                window.CASCADE_MATHJAX_URL ||
+                'https://cdn.jsdelivr.net/npm/mathjax@3/es5/tex-mml-chtml.js';
 
-      // 遍历所有子节点
-      const walker = document.createTreeWalker(
-        element,
-        NodeFilter.SHOW_ELEMENT | NodeFilter.SHOW_TEXT,
-        null,
-        false
-      );
+            // 常见编程语言列表
+            const COMMON_LANGS = [
+                'xml', 'html', 'css', 'javascript', 'typescript', 'python', 'java',
+                'json', 'bash', 'shell', 'sql', 'yaml', 'markdown', 'go', 'rust',
+                'c', 'cpp', 'csharp', 'php', 'ruby', 'swift', 'kotlin'
+            ];
 
-      let currentNode;
-      let skipUntilEndOfCodeBlock = null;
+            // SVG
+            const COPY_ICON_SVG = `<svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" class="h-4 w-4">
+        <path stroke-linecap="round" stroke-linejoin="round" d="M15.666 3.888A2.25 2.25 0 0 0 13.5 2.25h-3c-1.03 0-1.9.693-2.166 1.638m7.332 0c.055.194.084.4.084.612v0a.75.75 0 0 1-.75.75H9.75a.75.75 0 0 1-.75-.75v0c0-.212.03-.418.084-.612m7.332 0c.646.049 1.288.11 1.927.184 1.1.128 1.907 1.077 1.907 2.185V19.5a2.25 2.25 0 0 1-2.25 2.25H6.75A2.25 2.25 0 0 1 4.5 19.5V6.257c0-1.108.806-2.057 1.907-2.185a48.208 48.208 0 0 1 1.927-.184" />
+      </svg>`;
 
-      while (currentNode = walker.nextNode()) {
-        // 跳过代码块内部的节点（我们会单独处理）
-        if (skipUntilEndOfCodeBlock && skipUntilEndOfCodeBlock.contains(currentNode)) {
-          continue;
-        }
-        skipUntilEndOfCodeBlock = null;
+            const CHECK_ICON_SVG = `<svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" class="h-4 w-4">
+        <path stroke-linecap="round" stroke-linejoin="round" d="M4.5 12.75l6 6 9-13.5" />
+      </svg>`;
 
-        if (currentNode.nodeType === Node.TEXT_NODE) {
-          // 检查是否在代码块区域（包含语言名称的标题栏或代码内容区）
-          const parent = currentNode.parentElement;
-          if (parent) {
-            // 检查是否在 language-xxx 元素内部
-            if (parent.closest('[class*="language-"]')) {
-              continue; // 跳过，代码块会单独处理
+            // === 数学引擎状态 ===
+            let mathEngine = null;
+            let mathReadyPromise = null;
+
+            // === 工具函数 ===
+
+            // 动态加载样式表
+            const loadStyle = (href) =>
+                new Promise((resolve, reject) => {
+                    if (!href) return reject(new Error('Missing stylesheet URL'));
+                    if (document.querySelector(`link[href="${href}"]`)) return resolve();
+                    const link = document.createElement('link');
+                    link.rel = 'stylesheet';
+                    link.href = href;
+                    link.onload = () => resolve();
+                    link.onerror = () => reject(new Error(`Failed to load stylesheet: ${href}`));
+                    document.head.appendChild(link);
+                });
+
+            // 动态加载脚本
+            const loadScript = (src) =>
+                new Promise((resolve, reject) => {
+                    if (!src) return reject(new Error('Missing script URL'));
+                    if (document.querySelector(`script[src="${src}"]`)) return resolve();
+                    const script = document.createElement('script');
+                    script.src = src;
+                    script.async = true;
+                    script.onload = () => resolve();
+                    script.onerror = () => reject(new Error(`Failed to load script: ${src}`));
+                    document.head.appendChild(script);
+                });
+
+            // 确保数学引擎可用
+            const ensureMathEngine = () => {
+                if (mathReadyPromise) return mathReadyPromise;
+                mathReadyPromise = (async () => {
+                    // KaTeX
+                    if (window.katex && window.renderMathInElement) {
+                        mathEngine = 'katex';
+                        return;
+                    }
+
+                    try {
+                        await loadStyle(KATEX_CSS_URL);
+                        await loadScript(KATEX_JS_URL);
+                        await loadScript(KATEX_AUTO_URL);
+                        if (window.katex && window.renderMathInElement) {
+                            mathEngine = 'katex';
+                            return;
+                        }
+                    } catch (error) {
+                        console.warn('[Cascade] KaTeX 加载失败，尝试 MathJax:', error);
+                    }
+
+                    // MathJax
+                    if (window.MathJax && window.MathJax.typesetPromise) {
+                        mathEngine = 'mathjax';
+                        return;
+                    }
+
+                    try {
+                        window.MathJax = {
+                            tex: {
+                                inlineMath: [['$', '$'], ['\\(', '\\)']],
+                                displayMath: [['$$', '$$'], ['\\[', '\\]']],
+                            },
+                            options: {
+                                skipHtmlTags: ['script', 'noscript', 'style', 'textarea', 'pre', 'code'],
+                                ignoreHtmlClass: 'code-block|line-content|katex|no-math',
+                            },
+                            startup: { typeset: false },
+                        };
+                        await loadScript(MATHJAX_URL);
+                        if (window.MathJax && window.MathJax.typesetPromise) {
+                            await window.MathJax.startup.promise;
+                            mathEngine = 'mathjax';
+                            return;
+                        }
+                    } catch (error) {
+                        console.warn('[Cascade] MathJax 加载失败:', error);
+                    }
+
+                    mathEngine = null;
+                })();
+                return mathReadyPromise;
+            };
+
+            // 检查元素是否可编辑
+            const isEditable = (el) =>
+                !!el.closest('[contenteditable="true"], textarea, input');
+
+            // 写入剪贴板
+            const writeClipboard = async (text) => {
+                if (!text) return false;
+
+                // Clipboard API
+                if (navigator.clipboard && navigator.clipboard.writeText) {
+                    try {
+                        await navigator.clipboard.writeText(text);
+                        return true;
+                    } catch {
+                        // execCommand
+                    }
+                }
+
+                // execCommand
+                const textArea = document.createElement('textarea');
+                textArea.value = text;
+                textArea.setAttribute('readonly', '');
+                textArea.style.position = 'fixed';
+                textArea.style.left = '-9999px';
+                textArea.style.top = '-9999px';
+                document.body.appendChild(textArea);
+                textArea.focus();
+                textArea.select();
+                const ok = document.execCommand('copy');
+                document.body.removeChild(textArea);
+                return ok;
+            };
+
+            // 捕获原始文本
+            const captureRawText = (contentEl) => {
+                if (!contentEl) return;
+                if (contentEl.getAttribute(MATH_ATTR) === '1') return;
+                const raw = contentEl.innerText !== undefined
+                    ? contentEl.innerText
+                    : contentEl.textContent ?? '';
+                contentEl[RAW_TEXT_PROP] = raw;
+            };
+
+            // === 格式化内容提取 ===
+
+            // 提取表格为Markdown格式
+            const extractTable = (tableEl) => {
+                let markdown = '';
+                const rows = tableEl.querySelectorAll('tr');
+
+                rows.forEach((row, rowIdx) => {
+                    const cells = row.querySelectorAll('th, td');
+                    const cellContents = [];
+
+                    cells.forEach(cell => {
+                        let cellText = cell.innerText || cell.textContent;
+                        cellText = cellText.trim().replace(/\n/g, ' ');
+                        cellContents.push(cellText);
+                    });
+
+                    markdown += '| ' + cellContents.join(' | ') + ' |\n';
+
+                    // 在表头后添加分隔行
+                    if (rowIdx === 0 && row.querySelector('th')) {
+                        markdown += '| ' + cellContents.map(() => '---').join(' | ') + ' |\n';
+                    }
+                });
+
+                return markdown;
+            };
+
+            // 从渲染元素中提取 LaTeX 源码
+            const extractLatexFromMath = (mathEl) => {
+                // KaTeX 使用 annotation
+                const annotation = mathEl.querySelector('annotation[encoding="application/x-tex"]');
+                if (annotation) {
+                    const latex = annotation.textContent;
+                    // 判断是行内还是块级公式
+                    const isDisplay = mathEl.closest('.katex-display') !== null;
+                    return isDisplay ? `$$${latex}$$` : `$${latex}$`;
+                }
+
+                // MathJax 使用 mjx-container
+                if (mathEl.tagName === 'MJX-CONTAINER') {
+                    const ariaLabel = mathEl.getAttribute('aria-label');
+                    if (ariaLabel) {
+                        const isDisplay = mathEl.getAttribute('display') === 'true' ||
+                            mathEl.classList.contains('MathJax_Display');
+                        return isDisplay ? `$$${ariaLabel}$$` : `$${ariaLabel}$`;
+                    }
+                }
+
+                return null;
+            };
+
+            // 提取格式化内容
+            const extractFormattedContent = (element, useRawText = true) => {
+                // 检查内容类型
+                const hasCodeBlock = element.querySelector('[class*="language-"], .code-block, [aria-label^="highlighted-code"]');
+                const hasTable = element.querySelector('table');
+                const hasMathRendered = element.querySelector('.katex, mjx-container, .MathJax');
+
+                // 1. 没有代码块/表格，直接使用原始文本
+                if (!hasCodeBlock && !hasTable) {
+                    if (useRawText && element && element[RAW_TEXT_PROP] !== undefined) {
+                        return String(element[RAW_TEXT_PROP]).trim();
+                    }
+                }
+
+                // 2. 有代码块/表格，需要遍历 DOM 进行格式化处理
+                let result = '';
+                const walker = document.createTreeWalker(
+                    element,
+                    NodeFilter.SHOW_ELEMENT | NodeFilter.SHOW_TEXT,
+                    null,
+                    false
+                );
+
+                let currentNode;
+                let skipUntilEndOfBlock = null;
+
+                while (currentNode = walker.nextNode()) {
+                    // 跳过已处理的块级元素内部节点
+                    if (skipUntilEndOfBlock && skipUntilEndOfBlock.contains(currentNode)) {
+                        continue;
+                    }
+                    skipUntilEndOfBlock = null;
+
+                    if (currentNode.nodeType === Node.ELEMENT_NODE) {
+                        const classStr = currentNode.className || '';
+                        const classString = typeof classStr === 'string'
+                            ? classStr
+                            : (classStr.baseVal || '');
+
+                        // 处理 KaTeX 渲染的数学公式
+                        if (classString.includes('katex') && !classString.includes('katex-display')) {
+                            if (currentNode.classList.contains('katex')) {
+                                const latex = extractLatexFromMath(currentNode);
+                                if (latex) {
+                                    result += latex;
+                                    skipUntilEndOfBlock = currentNode;
+                                    continue;
+                                }
+                            }
+                        }
+
+                        // 处理 KaTeX 块级公式
+                        if (classString.includes('katex-display')) {
+                            const katexEl = currentNode.querySelector('.katex') || currentNode;
+                            const latex = extractLatexFromMath(katexEl);
+                            if (latex) {
+                                result += '\n' + latex + '\n';
+                                skipUntilEndOfBlock = currentNode;
+                                continue;
+                            }
+                        }
+
+                        // 处理 MathJax 渲染的数学公式
+                        if (currentNode.tagName === 'MJX-CONTAINER') {
+                            const latex = extractLatexFromMath(currentNode);
+                            if (latex) {
+                                const isDisplay = currentNode.getAttribute('display') === 'true';
+                                result += isDisplay ? '\n' + latex + '\n' : latex;
+                                skipUntilEndOfBlock = currentNode;
+                                continue;
+                            }
+                        }
+
+                        // 处理表格
+                        if (currentNode.tagName === 'TABLE') {
+                            result += '\n' + extractTable(currentNode) + '\n';
+                            skipUntilEndOfBlock = currentNode;
+                            continue;
+                        }
+
+                        // 处理有语言标识的代码块
+                        const langMatch = classString.match(/language-(\w+)/);
+                        if (langMatch) {
+                            const lang = langMatch[1];
+                            // 提取代码内容
+                            const codeBlock = currentNode.querySelector('.code-block');
+                            if (codeBlock) {
+                                const lines = codeBlock.querySelectorAll('.line-content');
+                                let codeContent = '';
+                                lines.forEach((line, idx) => {
+                                    codeContent += line.textContent;
+                                    if (idx < lines.length - 1) codeContent += '\n';
+                                });
+                                result += '\n```' + lang + '\n' + codeContent + '\n```\n';
+                                skipUntilEndOfBlock = currentNode;
+                            }
+                            continue;
+                        }
+
+                        // 处理无语言标识的代码块
+                        const ariaLabel = currentNode.getAttribute('aria-label') || '';
+                        if (ariaLabel.startsWith('highlighted-code') && !langMatch) {
+                            const codeBlock = currentNode.querySelector('.code-block');
+                            if (codeBlock) {
+                                const lines = codeBlock.querySelectorAll('.line-content');
+                                let codeContent = '';
+                                lines.forEach((line, idx) => {
+                                    codeContent += line.textContent;
+                                    if (idx < lines.length - 1) codeContent += '\n';
+                                });
+                                result += '\n```\n' + codeContent + '\n```\n';
+                                skipUntilEndOfBlock = currentNode;
+                            }
+                        }
+                    } else if (currentNode.nodeType === Node.TEXT_NODE) {
+                        const parent = currentNode.parentElement;
+                        if (parent) {
+                            // 跳过 KaTeX/MathJax 内部的文本节点
+                            if (parent.closest('.katex, mjx-container, .MathJax')) {
+                                continue;
+                            }
+                            // 跳过 language-xxx 元素内部
+                            if (parent.closest('[class*="language-"]')) {
+                                continue;
+                            }
+                            // 跳过代码块标题栏中的语言名称
+                            const parentClasses = parent.className || '';
+                            const parentClassStr = typeof parentClasses === 'string'
+                                ? parentClasses
+                                : (parentClasses.baseVal || '');
+                            if (parentClassStr.includes('opacity-60') &&
+                                parent.closest('pre')?.previousElementSibling) {
+                                continue;
+                            }
+                            // 跳过常见语言标识符文本
+                            const textContent = currentNode.textContent.trim().toLowerCase();
+                            if (COMMON_LANGS.includes(textContent) &&
+                                parent.closest('pre')?.parentElement?.querySelector('[class*="language-"]')) {
+                                continue;
+                            }
+                            // 跳过复制按钮文本
+                            if (parent.closest('.' + BUTTON_CLASS) ||
+                                parent.closest('.custom-copy-btn')) {
+                                continue;
+                            }
+                        }
+                        result += currentNode.textContent;
+                    }
+                }
+
+                return result.trim();
+            };
+
+            // === 数学公式渲染 ===
+
+            // 渲染数学公式
+            const renderMath = async (contentEl) => {
+                if (!contentEl || isEditable(contentEl)) return;
+
+                captureRawText(contentEl);
+                const text = contentEl.textContent || '';
+                if (!MATH_HINT_RE.test(text)) return;
+
+                if (contentEl.getAttribute(MATH_ATTR) === '1' && !MATH_HINT_RE.test(text)) {
+                    return;
+                }
+
+                await ensureMathEngine();
+
+                if (mathEngine === 'katex' && window.renderMathInElement) {
+                    window.renderMathInElement(contentEl, {
+                        delimiters: [
+                            { left: '$$', right: '$$', display: true },
+                            { left: '\\[', right: '\\]', display: true },
+                            { left: '\\(', right: '\\)', display: false },
+                            { left: '$', right: '$', display: false },
+                        ],
+                        ignoredTags: ['script', 'noscript', 'style', 'textarea', 'pre', 'code'],
+                        ignoredClasses: ['code-block', 'line-content', 'katex', 'no-math'],
+                        throwOnError: false,
+                    });
+                    contentEl.setAttribute(MATH_ATTR, '1');
+                    return;
+                }
+
+                if (mathEngine === 'mathjax' && window.MathJax?.typesetPromise) {
+                    await window.MathJax.typesetPromise([contentEl]);
+                    contentEl.setAttribute(MATH_ATTR, '1');
+                }
+            };
+
+            // === 复制按钮功能 ===
+
+            // 为内容区域添加复制按钮
+            const ensureContentCopyButton = (contentEl) => {
+                if (!contentEl || isEditable(contentEl)) return;
+
+                captureRawText(contentEl);
+                if (contentEl.getAttribute(BOUND_ATTR) === '1') return;
+                contentEl.setAttribute(BOUND_ATTR, '1');
+
+                const pos = getComputedStyle(contentEl).position;
+                if (pos === 'static') {
+                    contentEl.style.position = 'relative';
+                }
+
+                const btn = document.createElement('button');
+                btn.type = 'button';
+                btn.className = BUTTON_CLASS;
+                btn.innerHTML = `<span>Copy</span>${COPY_ICON_SVG}`;
+
+                btn.addEventListener('click', async (event) => {
+                    event.preventDefault();
+                    event.stopPropagation();
+                    const text = extractFormattedContent(contentEl, true);
+                    const ok = await writeClipboard(text);
+                    if (!ok) return;
+
+                    btn.innerHTML = `<span>Copied!</span>${CHECK_ICON_SVG}`;
+                    btn.classList.add('copied');
+                    setTimeout(() => {
+                        btn.innerHTML = `<span>Copy</span>${COPY_ICON_SVG}`;
+                        btn.classList.remove('copied');
+                    }, 1200);
+                });
+
+                contentEl.appendChild(btn);
+            };
+
+            // 添加反馈区域复制按钮
+            const addFeedbackCopyButtons = () => {
+                const feedbackContainers = document.querySelectorAll('[data-tooltip-id^="up-"]');
+
+                feedbackContainers.forEach(goodBtn => {
+                    // 获取父容器
+                    const parentContainer = goodBtn.parentElement;
+                    if (!parentContainer || parentContainer.querySelector('.custom-copy-btn')) {
+                        return; // 已添加过复制按钮，跳过
+                    }
+
+                    // 创建复制按钮
+                    const copyBtn = document.createElement('div');
+                    copyBtn.className = 'custom-copy-btn';
+                    copyBtn.innerHTML = `<span>Copy</span>${COPY_ICON_SVG}`;
+
+                    // 点击事件
+                    copyBtn.addEventListener('click', async (e) => {
+                        e.stopPropagation();
+
+                        // 查找消息内容
+                        let content = '';
+                        let searchNode = parentContainer;
+
+                        // 向上查找包含消息内容的容器
+                        for (let i = 0; i < 20; i++) {
+                            searchNode = searchNode.parentElement;
+                            if (!searchNode) break;
+
+                            const proseElements = searchNode.querySelectorAll('.prose.prose-sm');
+                            if (proseElements.length > 0) {
+                                const lastProse = proseElements[proseElements.length - 1];
+                                content = extractFormattedContent(lastProse);
+                                break;
+                            }
+                        }
+
+                        if (!content) {
+                            console.error('[Cascade] 未找到消息内容');
+                            return;
+                        }
+
+                        const ok = await writeClipboard(content.trim());
+                        if (!ok) {
+                            console.error('[Cascade] 复制失败');
+                            return;
+                        }
+
+                        // 显示复制成功状态
+                        copyBtn.innerHTML = `<span>Copied!</span>${CHECK_ICON_SVG}`;
+                        copyBtn.classList.add('copied');
+
+                        setTimeout(() => {
+                            copyBtn.innerHTML = `<span>Copy</span>${COPY_ICON_SVG}`;
+                            copyBtn.classList.remove('copied');
+                        }, 2000);
+                    });
+
+                    parentContainer.insertBefore(copyBtn, goodBtn);
+                });
+            };
+
+            // === 主逻辑 ===
+
+            // 扫描并处理内容区域
+            const scan = (root) => {
+                if (!root) return;
+
+                // 处理内容区域（添加复制按钮 + 渲染数学公式）
+                root.querySelectorAll(CONTENT_SELECTOR).forEach((node) => {
+                    ensureContentCopyButton(node);
+                    void renderMath(node);
+                });
+
+                // 处理反馈区域复制按钮
+                addFeedbackCopyButtons();
+            };
+
+            // 获取根元素
+            const getRoot = () =>
+                document.getElementById('chat') ||
+                document.getElementById('react-app') ||
+                document.body;
+
+            // 防抖调度
+            let scheduled = false;
+            const scheduleScan = () => {
+                if (scheduled) return;
+                scheduled = true;
+                requestAnimationFrame(() => {
+                    scheduled = false;
+                    scan(getRoot());
+                });
+            };
+
+            // 初始
+            const init = () => {
+                const root = getRoot();
+                scan(root);
+
+                const observer = new MutationObserver(scheduleScan);
+                observer.observe(root, { childList: true, subtree: true });
+            };
+
+            // 启动
+            if (document.readyState === 'loading') {
+                document.addEventListener('DOMContentLoaded', init);
+            } else {
+                init();
             }
-            // 检查是否在代码块标题栏（语言名称显示区域）
-            // 语言名称在 opacity-60 的div中，且是 pre 元素的兄弟节点的子节点
-            const parentClasses = parent.className || '';
-            const parentClassStr = typeof parentClasses === 'string' ? parentClasses : (parentClasses.baseVal || '');
-            if (parentClassStr.includes('opacity-60') && parent.closest('pre')?.previousElementSibling) {
-              continue; // 跳过标题栏中的语言名称
-            }
-            // 额外检查：如果文本内容就是常见的语言名称，且在代码块附近
-            const textContent = currentNode.textContent.trim();
-            const commonLangs = ['xml', 'html', 'css', 'javascript', 'typescript', 'python', 'java', 'json', 'bash', 'shell', 'sql', 'yaml', 'markdown', 'go', 'rust', 'c', 'cpp', 'csharp', 'php', 'ruby', 'swift', 'kotlin'];
-            if (commonLangs.includes(textContent.toLowerCase()) && parent.closest('pre')?.parentElement?.querySelector('[class*="language-"]')) {
-              continue; // 跳过语言标识文本
-            }
-          }
-          result += currentNode.textContent;
-        } else if (currentNode.nodeType === Node.ELEMENT_NODE) {
-          // 检查是否是代码块容器
-          const classStr = currentNode.className || '';
-          // className可能是SVGAnimatedString，需要转换为字符串
-          const classString = typeof classStr === 'string' ? classStr : (classStr.baseVal || '');
-          const langMatch = classString.match(/language-(\w+)/);
-
-          // 检查是否是表格
-          if (currentNode.tagName === 'TABLE') {
-            result += '\n' + extractTable(currentNode) + '\n';
-            skipUntilEndOfCodeBlock = currentNode;
-            continue;
-          }
-
-          // 有语言标识的代码块
-          if (langMatch) {
-            const lang = langMatch[1];
-            // 提取代码内容
-            const codeBlock = currentNode.querySelector('.code-block');
-            if (codeBlock) {
-              const lines = codeBlock.querySelectorAll('.line-content');
-              let codeContent = '';
-              lines.forEach((line, idx) => {
-                codeContent += line.textContent;
-                if (idx < lines.length - 1) codeContent += '\n';
-              });
-              result += '\n```' + lang + '\n' + codeContent + '\n```\n';
-              skipUntilEndOfCodeBlock = currentNode;
-            }
-          }
-
-          // 无语言标识的代码块（通过 aria-label="highlighted-code-" 或直接包含 .code-block）
-          const ariaLabel = currentNode.getAttribute('aria-label') || '';
-          if (ariaLabel.startsWith('highlighted-code') && !langMatch) {
-            const codeBlock = currentNode.querySelector('.code-block');
-            if (codeBlock) {
-              const lines = codeBlock.querySelectorAll('.line-content');
-              let codeContent = '';
-              lines.forEach((line, idx) => {
-                codeContent += line.textContent;
-                if (idx < lines.length - 1) codeContent += '\n';
-              });
-              result += '\n```\n' + codeContent + '\n```\n';
-              skipUntilEndOfCodeBlock = currentNode;
-            }
-          }
-        }
-      }
-
-      return result.trim();
-    }
-
-    // 提取表格为markdown格式
-    function extractTable(tableEl) {
-      let markdown = '';
-      const rows = tableEl.querySelectorAll('tr');
-
-      rows.forEach((row, rowIdx) => {
-        const cells = row.querySelectorAll('th, td');
-        const cellContents = [];
-
-        cells.forEach(cell => {
-          // 获取单元格文本，处理内部的code元素
-          let cellText = cell.innerText || cell.textContent;
-          cellText = cellText.trim().replace(/\n/g, ' ');
-          cellContents.push(cellText);
-        });
-
-        markdown += '| ' + cellContents.join(' | ') + ' |\n';
-
-        // 在表头后添加分隔行
-        if (rowIdx === 0 && row.querySelector('th')) {
-          markdown += '| ' + cellContents.map(() => '---').join(' | ') + ' |\n';
-        }
-      });
-
-      return markdown;
-    }
-
-    // 添加复制按钮的函数
-    function addCopyButtons() {
-      // 查找所有包含Good/Bad按钮的容器
-      const feedbackContainers = document.querySelectorAll('[data-tooltip-id^="up-"]');
-
-      feedbackContainers.forEach(goodBtn => {
-        // 获取父容器（包含Good和Bad按钮的flex容器）
-        const parentContainer = goodBtn.parentElement;
-        if (!parentContainer || parentContainer.querySelector('.custom-copy-btn')) {
-          return; // 已添加过复制按钮，跳过
-        }
-
-        // 向上查找消息内容区域
-        // 通常消息内容在包含反馈按钮的同级或父级元素附近
-        let messageContainer = parentContainer;
-        for (let i = 0; i < 10; i++) {
-          messageContainer = messageContainer.parentElement;
-          if (!messageContainer) break;
-        }
-
-        // 创建复制按钮
-        const copyBtn = document.createElement('div');
-        copyBtn.className = 'custom-copy-btn';
-        copyBtn.innerHTML = `<span>Copy</span>${copyIconSVG}`;
-
-        // 点击事件
-        copyBtn.addEventListener('click', async (e) => {
-          e.stopPropagation();
-
-          // 查找消息内容 - 向上遍历找到prose或markdown内容
-          let content = '';
-          let searchNode = parentContainer;
-
-          // 向上查找包含消息内容的容器
-          for (let i = 0; i < 20; i++) {
-            searchNode = searchNode.parentElement;
-            if (!searchNode) break;
-
-            // 查找所有 prose prose-sm 元素，取最后一个（最终返回文本）
-            const proseElements = searchNode.querySelectorAll('.prose.prose-sm');
-            if (proseElements.length > 0) {
-              // 取最后一个元素（最终返回文本总是在最后面）
-              const lastProse = proseElements[proseElements.length - 1];
-              content = extractFormattedContent(lastProse);
-              break;
-            }
-          }
-
-          if (!content) {
-            console.error('未找到消息内容');
-            return;
-          }
-
-          try {
-            // 使用备选复制方法（因为webview不支持clipboard API）
-            const textArea = document.createElement('textarea');
-            textArea.value = content.trim();
-            textArea.style.position = 'fixed';
-            textArea.style.left = '-9999px';
-            textArea.style.top = '-9999px';
-            document.body.appendChild(textArea);
-            textArea.focus();
-            textArea.select();
-
-            const successful = document.execCommand('copy');
-            document.body.removeChild(textArea);
-
-            if (!successful) {
-              throw new Error('execCommand copy 失败');
-            }
-
-            // 显示复制成功状态
-            copyBtn.innerHTML = `<span>Copied!</span>${checkIconSVG}`;
-            copyBtn.classList.add('copied');
-
-            // 2秒后恢复原状
-            setTimeout(() => {
-              copyBtn.innerHTML = `<span>Copy</span>${copyIconSVG}`;
-              copyBtn.classList.remove('copied');
-            }, 2000);
-          } catch (err) {
-            console.error('复制失败:', err);
-          }
-        });
-
-        // 将复制按钮插入到Good按钮之前
-        parentContainer.insertBefore(copyBtn, goodBtn);
-      });
-    }
-
-    // 使用MutationObserver监听DOM变化
-    const observer = new MutationObserver((mutations) => {
-      // 延迟执行以确保React渲染完成
-      setTimeout(addCopyButtons, 100);
-    });
-
-    // 等待react-app加载后开始观察
-    const waitForApp = setInterval(() => {
-      const app = document.getElementById('react-app');
-      if (app && app.children.length > 0) {
-        clearInterval(waitForApp);
-        observer.observe(app, {
-          childList: true,
-          subtree: true
-        });
-        // 初始执行一次
-        addCopyButtons();
-      }
-    }, 500);
-  </script>
+        })();
+    </script>
 </body>
 
 </html>
