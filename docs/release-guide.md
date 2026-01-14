@@ -10,6 +10,8 @@
 | Tauri 配置 | `patcher/src-tauri/tauri.conf.json` → `version` |
 | Cargo 配置 | `patcher/src-tauri/Cargo.toml` → `version` |
 | 前端显示 | `patcher/src/App.vue` → `APP_VERSION` |
+| README 版本徽章 | `README.md` → 顶部版本号徽章 |
+| README 版本表格 | `README.md` → "📋 版本信息" 表格 |
 
 ---
 
