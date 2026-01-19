@@ -5,11 +5,12 @@ import { open } from "@tauri-apps/plugin-dialog";
 import TitleBar from "./components/TitleBar.vue";
 import PathCard from "./components/PathCard.vue";
 import FeatureCard from "./components/FeatureCard.vue";
+import ManagerFeatureCard from "./components/ManagerFeatureCard.vue";
 import AboutModal from "./components/AboutModal.vue";
 import ConfirmModal from "./components/ConfirmModal.vue";
 
 // 常量
-const APP_VERSION = "2.0.1";
+const APP_VERSION = "2.1.0";
 const GITHUB_URL = "https://github.com/daoif/anti-power";
 
 // 补丁文件清单
@@ -17,10 +18,12 @@ const PATCH_FILES = {
   // 将被修改的原始文件
   modified: [
     "cascade-panel.html",
+    "workbench-jetski-agent.html",
   ],
   // 将添加的新文件/目录
   added: [
-    "cascade-panel/  (模块目录)",
+    "cascade-panel/  (侧边栏模块)",
+    "manager-panel/  (Manager模块)",
   ],
   // 废弃文件（旧版本遗留，新版本不再使用）
   deprecated: [] as string[],
@@ -33,7 +36,7 @@ const isInstalled = ref(false);
 const showAbout = ref(false);
 const showConfirm = ref(false);
 
-// 功能开关
+// 侧边栏功能开关
 const features = ref({
   mermaid: true,
   math: true,
@@ -41,6 +44,15 @@ const features = ref({
   tableColor: true,
   fontSizeEnabled: true,
   fontSize: 20,
+});
+
+// Manager 功能开关（独立配置）
+const managerFeatures = ref({
+  mermaid: false,
+  math: false,
+  copyButton: true,
+  fontSizeEnabled: false,
+  fontSize: 16,
 });
 
 // 检测 Antigravity 安装路径
@@ -109,7 +121,8 @@ async function confirmInstall() {
   try {
     await invoke("install_patch", { 
       path: antigravityPath.value,
-      features: features.value 
+      features: features.value,
+      managerFeatures: managerFeatures.value
     });
     isInstalled.value = true;
     showToast('✓ 补丁安装成功');
@@ -150,7 +163,8 @@ async function updateConfigOnly() {
   try {
     await invoke("update_config", { 
       path: antigravityPath.value,
-      features: features.value 
+      features: features.value,
+      managerFeatures: managerFeatures.value
     });
     showToast('✓ 配置已更新');
   } catch (e) {
@@ -177,6 +191,8 @@ onMounted(() => {
       />
 
       <FeatureCard v-model="features" />
+
+      <ManagerFeatureCard v-model="managerFeatures" />
 
       <section class="actions">
         <button 

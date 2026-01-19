@@ -77,13 +77,20 @@ async function main() {
         // 导出 DOM 树结构（简化版，方便阅读）
         const domTree = await managerPage.evaluate(() => {
             function getNodeInfo(element, depth = 0) {
-                if (depth > 6) return null; // 限制深度
+                if (depth > 15) return null; // 增加深度
 
                 const info = {
                     tag: element.tagName?.toLowerCase() || '#text',
                     id: element.id || undefined,
-                    class: element.className || undefined,
                 };
+
+                // 处理 className 可能为对象的情况 (例如 SVG)
+                const className = element.className;
+                if (typeof className === 'string') {
+                    info.class = className;
+                } else if (className && typeof className === 'object' && className.baseVal !== undefined) {
+                    info.class = className.baseVal;
+                }
 
                 // 只获取有意义的属性
                 if (element.getAttribute) {
@@ -113,12 +120,18 @@ async function main() {
         // 提取所有有 ID 或特定 class 的重要元素
         const keyElements = await managerPage.evaluate(() => {
             const elements = document.querySelectorAll('[id], [class*="cascade"], [class*="agent"], [class*="panel"], [class*="chat"]');
-            return Array.from(elements).slice(0, 100).map(el => ({
-                tag: el.tagName.toLowerCase(),
-                id: el.id || undefined,
-                class: el.className?.split(' ').filter(c => c).slice(0, 5).join(' ') || undefined,
-                text: el.textContent?.slice(0, 50).trim() || undefined
-            }));
+            return Array.from(elements).slice(0, 100).map(el => {
+                let className = el.className;
+                if (typeof className !== 'string') {
+                    className = className?.baseVal || '';
+                }
+                return {
+                    tag: el.tagName.toLowerCase(),
+                    id: el.id || undefined,
+                    class: className.split(' ').filter(c => c).slice(0, 5).join(' ') || undefined,
+                    text: el.textContent?.slice(0, 50).trim() || undefined
+                };
+            });
         });
 
         const elementsPath = path.join(tempDir, 'manager-key-elements.json');

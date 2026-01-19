@@ -6,7 +6,7 @@
 
 <p align="center">
   <a href="https://github.com/daoif/anti-power/releases">
-    <img src="https://img.shields.io/badge/版本-v2.0.1-blue.svg" alt="版本">
+    <img src="https://img.shields.io/badge/版本-v2.1.0-blue.svg" alt="版本">
   </a>
   <a href="https://codeium.com/antigravity">
     <img src="https://img.shields.io/badge/支持_Antigravity-v1.14.2-green.svg" alt="Antigravity">
@@ -47,7 +47,7 @@ Antigravity 是一款优秀的 AI IDE，但在日常使用中难免会遇到一�
 |------|------|
 | 🎨 **Mermaid 渲染** | 自动渲染流程图、时序图、类图等，支持深色主题 |
 | 📐 **数学公式渲染** | 支持 `$...$` 行内公式和 `$$...$$` 块级公式 |
-| 📋 **一键复制** | Copy 按钮复制 AI 返回内容，自动转 Markdown |
+| 📋 **一键复制** | 侧边栏与 Manager 提供 Copy 按钮，自动转 Markdown |
 | 🎯 **表格颜色修复** | 修复深色主题下表格文字不可见问题 |
 | 👆 **悬浮复制按钮** | 内容区域右上角悬浮按钮，不影响阅读 |
 
@@ -143,6 +143,7 @@ macOS 版本正在开发中，敬请期待！
 
 | 补丁版本 | 支持的 Antigravity 版本 | 发布日期 | 更新内容 |
 |---------|------------------------|----------|----------|
+| v2.1.0  | v1.14.2                | 2026-01-19 | 侧边栏字体调节、Mermaid 报错提示优化、Manager 一键复制 |
 | v2.0.1  | v1.14.2                | 2026-01-14 | 性能优化，感谢 @mikessslxxx |
 | v2.0.0  | v1.14.2                | 2026-01-14 | 新增 Tauri 工具，支持功能单独开关 |
 | v1.2.1  | v1.13.3                | 2026-01-13 | Bug 修复 |
