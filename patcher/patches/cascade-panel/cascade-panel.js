@@ -5,7 +5,14 @@
 
 import { loadStyle } from './utils.js';
 
-const DEFAULT_CONFIG = { mermaid: true, math: true, copyButton: true, tableColor: true };
+const DEFAULT_CONFIG = {
+    mermaid: true,
+    math: true,
+    copyButton: true,
+    tableColor: true,
+    fontSizeEnabled: true,
+    fontSize: 20,
+};
 
 // 加载配置
 const loadConfig = async () => {
@@ -18,11 +25,30 @@ const loadConfig = async () => {
         if (!data || typeof data !== 'object' || Array.isArray(data)) {
             return DEFAULT_CONFIG;
         }
-        return data;
+        return { ...DEFAULT_CONFIG, ...data };
     } catch {
         // 默认全部启用
         return DEFAULT_CONFIG;
     }
+};
+
+// 应用字体大小配置
+const applyFontSize = (userConfig) => {
+    const root = document.documentElement;
+    if (!root) return;
+
+    if (!userConfig?.fontSizeEnabled) {
+        root.style.removeProperty('--cascade-panel-font-size');
+        return;
+    }
+
+    const size = Number(userConfig.fontSize);
+    if (!Number.isFinite(size) || size <= 0) {
+        root.style.removeProperty('--cascade-panel-font-size');
+        return;
+    }
+
+    root.style.setProperty('--cascade-panel-font-size', `${size}px`);
 };
 
 // 动态加载表格修复样式
@@ -35,6 +61,7 @@ const loadTableFix = () => {
 // 入口
 (async () => {
     const config = await loadConfig();
+    applyFontSize(config);
 
     // 表格颜色修复（CSS 动态加载）
     if (config.tableColor) {
