@@ -1,5 +1,8 @@
 /**
- * 从虚拟列表的 React 元素中递归提取消息数据
+ * 从侧边栏虚拟列表的 React 元素中递归提取消息数据.
+ *
+ * 使用方法:
+ * node scripts/dump-cascade-dom.js "ws://127.0.0.1:9222/devtools/browser/xxx"
  */
 
 const { chromium } = require('playwright');
@@ -28,6 +31,7 @@ async function main() {
     const wsUrl = process.argv[2];
     if (!wsUrl) {
         console.log('❌ 请提供 WebSocket URL 作为参数！');
+        console.log('用法: node scripts/dump-cascade-dom.js "ws://127.0.0.1:9222/devtools/browser/xxx"');
         process.exit(1);
     }
 
@@ -60,7 +64,7 @@ async function main() {
             process.exit(1);
         }
 
-        const tempDir = path.join(__dirname, 'temp');
+        const tempDir = path.join(__dirname, '..', 'temp');
         if (!fs.existsSync(tempDir)) {
             fs.mkdirSync(tempDir, { recursive: true });
         }
@@ -128,7 +132,7 @@ async function main() {
                         }
                     }
 
-                    // 如果是数组，递归处理每个元素
+                    // 如果是数组, 递归处理每个元素.
                     if (Array.isArray(el)) {
                         for (const item of el) {
                             items.push(...extractFromReactElement(item, depth + 1));

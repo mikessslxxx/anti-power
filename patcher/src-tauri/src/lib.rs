@@ -1,5 +1,5 @@
-// Anti-Power Patcher - Rust 后端
-// 路径检测、补丁安装/卸载、配置管理
+// Anti-Power Patcher Rust 后端.
+// 负责路径检测, 补丁安装/卸载, 配置读写.
 
 mod commands;
 mod embedded;

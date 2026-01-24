@@ -1,3 +1,14 @@
+/**
+ * Cascade Panel 补丁常量定义
+ *
+ * 本模块定义补丁核心常量，包括：
+ * - DOM 选择器与标记属性
+ * - CDN 资源配置（KaTeX、MathJax、Mermaid）
+ * - 通用语言集合
+ *
+ * 支持通过全局变量覆盖 CDN 地址以适应离线或镜像环境。
+ */
+
 // 内容扫描的选择器，控制功能覆盖的 DOM 范围
 export const CONTENT_SELECTOR = '.prose, .prose-sm, [data-in-html-content]';
 export const BOUND_ATTR = 'data-cascade-copy-bound';

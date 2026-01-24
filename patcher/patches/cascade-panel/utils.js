@@ -1,3 +1,14 @@
+/**
+ * Cascade Panel 工具函数模块
+ *
+ * 本模块提供补丁使用的通用工具函数，包括：
+ * - 动态资源加载（脚本、样式）
+ * - 剪贴板操作
+ * - DOM 辅助函数
+ *
+ * 资源加载采用 Promise 缓存机制，避免重复请求同一资源。
+ */
+
 import { MATH_ATTR, RAW_TEXT_PROP } from './constants.js';
 
 const stylePromises = new Map();

@@ -1,3 +1,19 @@
+/**
+ * Cascade Panel 内容扫描模块
+ *
+ * 本模块是补丁的核心调度器，负责：
+ * - 扫描 DOM 中的内容区域并触发渲染
+ * - 监听 DOM 变更以处理新增内容
+ * - 管理延迟渲染队列，等待内容稳定后再处理
+ *
+ * 扫描策略：
+ * - 使用 MutationObserver 监听 DOM 变更
+ * - 通过反馈按钮判断消息是否完成输出
+ * - 延迟渲染避免流式输出时频繁触发
+ *
+ * 模块入口为 start() 函数，接收配置并启动扫描。
+ */
+
 import { CONTENT_SELECTOR } from './constants.js';
 import { addFeedbackCopyButtons, ensureContentCopyButton } from './copy.js';
 import { renderMath } from './math.js';

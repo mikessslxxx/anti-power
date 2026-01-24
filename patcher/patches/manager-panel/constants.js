@@ -1,6 +1,14 @@
 /**
  * Manager Panel 常量定义
- * 完全独立于 cascade-panel
+ *
+ * 本模块定义 Manager 窗口补丁的核心常量，完全独立于 cascade-panel。
+ *
+ * 包括：
+ * - DOM 选择器与标记属性
+ * - CDN 资源配置（KaTeX、MathJax、Mermaid）
+ * - 按钮样式类名
+ *
+ * 支持通过全局变量覆盖 CDN 地址以适应离线或镜像环境。
  */
 
 // Manager 内容区选择器（基于 DOM 分析结果）

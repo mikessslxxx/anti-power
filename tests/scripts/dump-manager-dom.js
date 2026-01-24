@@ -1,8 +1,8 @@
 /**
- * 导出 Manager 窗口 (Launchpad) 的 DOM 结构
- * 
+ * 导出 Manager 窗口 (Launchpad) 的 DOM 结构.
+ *
  * 使用方法:
- * node dump-manager-dom.js "ws://127.0.0.1:9222/devtools/browser/xxx"
+ * node scripts/dump-manager-dom.js "ws://127.0.0.1:9222/devtools/browser/xxx"
  */
 
 const { chromium } = require('playwright');
@@ -14,7 +14,7 @@ async function main() {
 
     if (!wsUrl) {
         console.log('❌ 请提供 WebSocket URL 作为参数！');
-        console.log('用法: node dump-manager-dom.js "ws://127.0.0.1:9222/devtools/browser/xxx"');
+        console.log('用法: node scripts/dump-manager-dom.js "ws://127.0.0.1:9222/devtools/browser/xxx"');
         process.exit(1);
     }
 
@@ -27,20 +27,20 @@ async function main() {
         const contexts = browser.contexts();
         let managerPage = null;
 
-        // 查找 Manager 窗口（优先匹配标题为 "Manager" 的页面）
+        // 查找 Manager 窗口, 优先匹配标题为 "Manager" 的页面.
         let fallbackPage = null;
         for (const context of contexts) {
             for (const page of context.pages()) {
                 const url = page.url();
                 const title = await page.title();
 
-                // 优先选择标题为 "Manager" 的页面
+                // 优先选择标题为 "Manager" 的页面.
                 if (title === 'Manager') {
                     managerPage = page;
                     console.log(`🎯 找到 Manager 窗口: ${title}`);
                     break;
                 }
-                // 作为备选，记录第一个 jetski-agent 页面
+                // 作为备选, 记录第一个 jetski-agent 页面.
                 if (url.includes('workbench-jetski-agent.html') && !fallbackPage) {
                     fallbackPage = page;
                 }
@@ -48,7 +48,7 @@ async function main() {
             if (managerPage) break;
         }
 
-        // 如果没找到 Manager，使用备选页面
+        // 如果没找到 Manager, 使用备选页面.
         if (!managerPage && fallbackPage) {
             managerPage = fallbackPage;
             console.log(`⚠️ 未找到标题为 "Manager" 的页面，使用备选: ${await fallbackPage.title()}`);
@@ -62,8 +62,8 @@ async function main() {
 
         console.log('\n📦 正在导出 DOM 结构...\n');
 
-        // 确保 temp 目录存在
-        const tempDir = path.join(__dirname, 'temp');
+        // 输出目录固定为 tests/temp.
+        const tempDir = path.join(__dirname, '..', 'temp');
         if (!fs.existsSync(tempDir)) {
             fs.mkdirSync(tempDir, { recursive: true });
         }
@@ -74,17 +74,17 @@ async function main() {
         fs.writeFileSync(htmlPath, fullHtml, 'utf-8');
         console.log(`✅ 完整 HTML 已保存到: ${htmlPath}`);
 
-        // 导出 DOM 树结构（简化版，方便阅读）
+        // 导出 DOM 树结构 (简化版, 方便阅读).
         const domTree = await managerPage.evaluate(() => {
             function getNodeInfo(element, depth = 0) {
-                if (depth > 15) return null; // 增加深度
+                if (depth > 15) return null; // Limit depth to keep output concise.
 
                 const info = {
                     tag: element.tagName?.toLowerCase() || '#text',
                     id: element.id || undefined,
                 };
 
-                // 处理 className 可能为对象的情况 (例如 SVG)
+                // 处理 className 可能为对象的情况 (例如 SVG).
                 const className = element.className;
                 if (typeof className === 'string') {
                     info.class = className;
@@ -92,7 +92,7 @@ async function main() {
                     info.class = className.baseVal;
                 }
 
-                // 只获取有意义的属性
+                // 只获取有意义的属性.
                 if (element.getAttribute) {
                     const role = element.getAttribute('role');
                     const dataTestid = element.getAttribute('data-testid');
@@ -100,7 +100,7 @@ async function main() {
                     if (dataTestid) info.testId = dataTestid;
                 }
 
-                // 递归获取子元素
+                // 递归获取子元素.
                 if (element.children && element.children.length > 0) {
                     info.children = Array.from(element.children)
                         .map(child => getNodeInfo(child, depth + 1))
@@ -117,7 +117,7 @@ async function main() {
         fs.writeFileSync(treePath, JSON.stringify(domTree, null, 2), 'utf-8');
         console.log(`✅ DOM 树结构已保存到: ${treePath}`);
 
-        // 提取所有有 ID 或特定 class 的重要元素
+        // 提取有 ID 或关键 class 的元素, 便于定位.
         const keyElements = await managerPage.evaluate(() => {
             const elements = document.querySelectorAll('[id], [class*="cascade"], [class*="agent"], [class*="panel"], [class*="chat"]');
             return Array.from(elements).slice(0, 100).map(el => {

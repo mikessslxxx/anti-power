@@ -1,3 +1,18 @@
+/**
+ * Cascade Panel Mermaid 图表渲染模块
+ *
+ * 本模块负责检测并渲染 Mermaid 代码块为可视化图表。
+ *
+ * 渲染流程：
+ * 1. 检测 DOM 中的 Mermaid 代码块（class 包含 language-mermaid）
+ * 2. 按需加载 Mermaid 库（CDN）
+ * 3. 提取源码并调用 mermaid.render 生成 SVG
+ * 4. 原代码块隐藏，渲染结果插入到其后
+ *
+ * 支持图表更新：当源码变化时自动重新渲染。
+ * 渲染容器包含复制按钮，可直接复制 Mermaid 源码。
+ */
+
 import {
     MERMAID_ATTR,
     MERMAID_CONTAINER_CLASS,
