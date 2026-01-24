@@ -1,3 +1,16 @@
+/**
+ * Cascade Panel 内容提取模块
+ *
+ * 本模块负责从 DOM 中提取格式化内容并转换为 Markdown 格式，
+ * 用于复制功能。支持的内容类型包括：
+ * - 代码块（带语言标识）
+ * - 表格（转换为 Markdown 表格）
+ * - 数学公式（恢复 LaTeX 源码）
+ * - Mermaid 图表（恢复源码）
+ *
+ * 使用 TreeWalker 线性遍历 DOM，通过跳跃机制避免重复处理嵌套结构。
+ */
+
 import {
     BUTTON_CLASS,
     COMMON_LANGS,

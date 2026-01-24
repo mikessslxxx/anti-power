@@ -1,7 +1,7 @@
 #!/bin/bash
 
-# 1. chmod +x ./anti-power.sh
-# 2. sudo ./anti-power.sh
+# 1. chmod +x ./anti-power-macOS.sh
+# 2. sudo ./anti-power-macOS.sh
 
 # 确保脚本在错误时停止
 set -e
@@ -9,7 +9,7 @@ set -e
 # 定义路径
 APP_PATH="/Applications/Antigravity.app/Contents/Resources/app"
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-PATCHES_DIR="$SCRIPT_DIR" # "$SCRIPT_DIR/patcher/patches"
+PATCHES_DIR="$SCRIPT_DIR"
 
 echo "开始执行 Antigravity 补丁脚本"
 

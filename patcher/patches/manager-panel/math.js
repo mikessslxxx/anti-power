@@ -1,6 +1,20 @@
 /**
  * Manager Panel 数学公式渲染
- * 完全独立于 cascade-panel
+ *
+ * 本模块负责 Manager 窗口的数学公式渲染，完全独立于 cascade-panel。
+ *
+ * 渲染策略：
+ * - 使用 KaTeX 进行渲染（不使用 auto-render）
+ * - 手动解析公式分隔符并逐个渲染
+ * - 使用 katex.render 直接渲染到 DOM，避免 innerHTML
+ *
+ * 支持的公式语法：
+ * - 行内公式：$...$ 或 \(...\)
+ * - 块级公式：$$...$$ 或 \[...\]
+ *
+ * 特殊处理：
+ * - 绕过 Trusted Types 限制（不使用 innerHTML）
+ * - 保留原始文本用于复制功能
  */
 
 import {

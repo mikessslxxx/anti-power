@@ -1,5 +1,6 @@
 /**
- * 自动连接 Antigravity 并调试 Manager 窗口
+ * 自动连接 Antigravity 并调试 Manager 窗口.
+ * 需要使用 --remote-debugging-port=9222 启动, 并打开 Manager 窗口.
  */
 
 const { chromium } = require('playwright');
@@ -8,7 +9,7 @@ const { chromium } = require('playwright');
     console.log('🔍 正在获取 WebSocket URL...');
 
     try {
-        // 先通过 HTTP 获取浏览器信息
+        // 先通过 HTTP 获取浏览器信息.
         const response = await fetch('http://127.0.0.1:9222/json/version');
         const info = await response.json();
         const wsUrl = info.webSocketDebuggerUrl;
@@ -29,7 +30,7 @@ const { chromium } = require('playwright');
                     console.log(`\n🎯 找到 Manager 窗口: ${title}`);
                     console.log(`   URL: ${url}`);
 
-                    // 监听 Console 消息
+                    // 监听 Console 消息.
                     page.on('console', msg => {
                         const type = msg.type().toUpperCase();
                         const text = msg.text();
@@ -38,12 +39,12 @@ const { chromium } = require('playwright');
                         }
                     });
 
-                    // 监听页面错误
+                    // 监听页面错误.
                     page.on('pageerror', error => {
                         console.log(`[PAGE ERROR] ${error.message}`);
                     });
 
-                    // 检查脚本是否加载
+                    // 检查脚本是否加载.
                     console.log('\n📜 检查脚本状态...');
                     const scriptInfo = await page.evaluate(() => {
                         const scripts = document.querySelectorAll('script');
@@ -51,7 +52,7 @@ const { chromium } = require('playwright');
                     });
                     console.log('加载的脚本:', scriptInfo);
 
-                    // 获取所有 Console 错误
+                    // 获取库加载状态与错误线索.
                     console.log('\n🔴 获取页面错误...');
                     const errors = await page.evaluate(() => {
                         // 尝试获取任何错误信息
@@ -63,7 +64,7 @@ const { chromium } = require('playwright');
                     });
                     console.log('库加载状态:', errors);
 
-                    // 尝试手动执行脚本逻辑
+                    // 尝试手动执行脚本逻辑.
                     console.log('\n🧪 测试内容选择器...');
                     const contentTest = await page.evaluate(() => {
                         const selector = '.leading-relaxed.select-text';

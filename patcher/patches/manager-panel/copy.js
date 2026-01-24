@@ -1,6 +1,13 @@
 /**
  * Manager Panel 复制功能
- * 完全独立于 cascade-panel
+ *
+ * 本模块提供 Manager 窗口的复制按钮功能，完全独立于 cascade-panel。
+ *
+ * 主要功能：
+ * - 内容区域复制按钮注入
+ * - 反馈区域（Good/Bad 按钮旁）复制按钮注入
+ * - 格式化内容提取（代码块、表格、Mermaid）
+ * - 智能语言检测与 Markdown 转换
  */
 
 import {

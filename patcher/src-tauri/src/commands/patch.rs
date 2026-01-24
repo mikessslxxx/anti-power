@@ -1,4 +1,4 @@
-// 补丁安装/卸载模块
+// 补丁安装与卸载模块
 
 use serde::{Deserialize, Serialize};
 use std::fs;
@@ -9,7 +9,7 @@ use crate::embedded;
 #[derive(Debug, Serialize, Deserialize)]
 #[serde(default)]
 pub struct FeatureConfig {
-    /// 是否启用侧边栏补丁（禁用时还原所有侧边栏相关文件）
+    /// 是否启用侧边栏补丁 (禁用时还原所有侧边栏相关文件)
     pub enabled: bool,
     pub mermaid: bool,
     pub math: bool,
@@ -41,7 +41,7 @@ impl Default for FeatureConfig {
 #[derive(Debug, Serialize, Deserialize)]
 #[serde(default)]
 pub struct ManagerFeatureConfig {
-    /// 是否启用 Manager 补丁（禁用时还原所有 Manager 相关文件）
+    /// 是否启用 Manager 补丁 (禁用时还原所有 Manager 相关文件)
     pub enabled: bool,
     pub mermaid: bool,
     pub math: bool,
@@ -88,7 +88,7 @@ pub fn install_patch(
         .join("extensions")
         .join("antigravity");
 
-    // Manager 目标目录 (不同的路径!)
+    // Manager 目标目录
     let workbench_dir = antigravity_path
         .join("resources")
         .join("app")
@@ -129,7 +129,7 @@ pub fn install_patch(
     Ok(())
 }
 
-/// 卸载补丁（恢复原版）
+/// 卸载补丁 (恢复原版)
 #[tauri::command]
 pub fn uninstall_patch(path: String) -> Result<(), String> {
     let antigravity_path = PathBuf::from(&path);
@@ -159,7 +159,7 @@ pub fn uninstall_patch(path: String) -> Result<(), String> {
     Ok(())
 }
 
-/// 仅更新配置文件（不重新复制补丁文件）
+/// 仅更新配置文件 (不重新复制补丁文件)
 #[tauri::command]
 pub fn update_config(
     path: String, 
@@ -183,7 +183,7 @@ pub fn update_config(
 
     write_config_file(&cascade_config_path, &features)?;
 
-    // Manager 配置 (不同的路径)
+    // Manager 配置
     let manager_config_path = antigravity_path
         .join("resources")
         .join("app")
@@ -215,7 +215,7 @@ pub fn check_patch_status(path: String) -> Result<bool, String> {
         .join("cascade-panel")
         .join("config.json");
 
-    // 如果 config.json 存在，则认为补丁已安装
+    // 如果 config.json 存在, 则认为补丁已安装
     Ok(config_path.exists())
 }
 
@@ -300,7 +300,7 @@ fn backup_manager_files(workbench_dir: &PathBuf) -> Result<(), String> {
 fn write_cascade_patches(extensions_dir: &PathBuf, features: &FeatureConfig) -> Result<(), String> {
     let cascade_panel_dir = extensions_dir.join("cascade-panel");
     
-    // 先删除旧目录，确保文件结构干净
+    // 先删除旧目录, 确保文件结构干净
     if cascade_panel_dir.exists() {
         fs::remove_dir_all(&cascade_panel_dir)
             .map_err(|e| format!("删除旧 cascade-panel 目录失败: {}", e))?;
@@ -343,7 +343,7 @@ fn write_cascade_patches(extensions_dir: &PathBuf, features: &FeatureConfig) -> 
 fn write_manager_patches(workbench_dir: &PathBuf, manager_features: &ManagerFeatureConfig) -> Result<(), String> {
     let manager_panel_dir = workbench_dir.join("manager-panel");
     
-    // 先删除旧目录，确保文件结构干净
+    // 先删除旧目录, 确保文件结构干净
     if manager_panel_dir.exists() {
         fs::remove_dir_all(&manager_panel_dir)
             .map_err(|e| format!("删除旧 manager-panel 目录失败: {}", e))?;
@@ -417,7 +417,7 @@ fn write_manager_config_file(config_path: &PathBuf, features: &ManagerFeatureCon
     Ok(())
 }
 
-/// 恢复侧边栏文件（禁用补丁时调用）
+/// 恢复侧边栏文件 (禁用补丁时调用)
 fn restore_cascade_files(extensions_dir: &PathBuf) -> Result<(), String> {
     // 恢复 cascade-panel.html
     let cascade_panel = extensions_dir.join("cascade-panel.html");
@@ -437,7 +437,7 @@ fn restore_cascade_files(extensions_dir: &PathBuf) -> Result<(), String> {
     Ok(())
 }
 
-/// 恢复 Manager 文件（禁用补丁时调用）
+/// 恢复 Manager 文件 (禁用补丁时调用)
 fn restore_manager_files(workbench_dir: &PathBuf) -> Result<(), String> {
     // 恢复 workbench-jetski-agent.html
     let jetski_agent = workbench_dir.join("workbench-jetski-agent.html");
@@ -457,10 +457,9 @@ fn restore_manager_files(workbench_dir: &PathBuf) -> Result<(), String> {
     Ok(())
 }
 
-/// 恢复所有备份文件（完全卸载时调用）
+/// 恢复所有备份文件 (完全卸载时调用)
 fn restore_backup_files(extensions_dir: &PathBuf, workbench_dir: &PathBuf) -> Result<(), String> {
     restore_cascade_files(extensions_dir)?;
     restore_manager_files(workbench_dir)?;
     Ok(())
 }
-

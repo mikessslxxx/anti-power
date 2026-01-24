@@ -1,3 +1,16 @@
+/**
+ * Cascade Panel 复制功能模块
+ *
+ * 本模块提供复制按钮的创建、绑定和状态管理功能，
+ * 用于实现一键复制消息内容的能力。
+ *
+ * 主要功能：
+ * - 创建复制按钮（支持 button 和 div 两种标签）
+ * - 绑定复制事件（带成功反馈状态）
+ * - 内容区域复制按钮注入
+ * - 反馈区域复制按钮注入
+ */
+
 import { BOUND_ATTR, BUTTON_CLASS } from './constants.js';
 import { CHECK_ICON_SVG, COPY_ICON_SVG } from './icons.js';
 import { extractFormattedContent } from './extract.js';

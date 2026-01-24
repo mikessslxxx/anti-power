@@ -1,13 +1,13 @@
 // 路径检测模块
-// Windows 实现：注册表查询 + 常见路径扫描
-// macOS 实现：占位（社区贡献）
+// Windows: 注册表查询 + 常见路径扫描
+// macOS: 标准路径探测, 未命中时返回 None
 
 use std::path::PathBuf;
 
-// 平台特定实现直接内联，避免子模块路径问题
+// 平台特定实现直接内联, 避免子模块路径问题
 
 /// 检测 Antigravity 安装路径
-/// 返回找到的第一个有效路径，或 None
+/// 返回找到的第一个有效路径, 或 None
 #[tauri::command]
 pub fn detect_antigravity_path() -> Option<String> {
     #[cfg(target_os = "windows")]
@@ -28,7 +28,7 @@ pub fn detect_antigravity_path() -> Option<String> {
 
 /// 验证路径是否为有效的 Antigravity 安装目录
 fn is_valid_antigravity_path(path: &PathBuf) -> bool {
-    // 检查关键文件/目录是否存在
+    // 通过核心 hook 文件判断目录有效性
     let cascade_panel_path = path
         .join("resources")
         .join("app")
@@ -39,15 +39,15 @@ fn is_valid_antigravity_path(path: &PathBuf) -> bool {
     cascade_panel_path.exists()
 }
 
-// ==================== Windows 实现 ====================
+// Windows 实现
 #[cfg(target_os = "windows")]
 fn detect_windows() -> Option<String> {
-    // 方式1：尝试从注册表读取
+    // 方式 1: 尝试从注册表读取
     if let Some(path) = try_registry() {
         return Some(path);
     }
 
-    // 方式2：扫描常见路径
+    // 方式 2: 扫描常见路径
     if let Some(path) = try_common_paths_windows() {
         return Some(path);
     }
@@ -122,7 +122,7 @@ fn try_common_paths_windows() -> Option<String> {
     None
 }
 
-// ==================== macOS 实现 ====================
+// macOS 实现
 #[cfg(target_os = "macos")]
 fn detect_macos() -> Option<String> {
     let standard_paths = [

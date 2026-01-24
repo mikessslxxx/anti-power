@@ -53,7 +53,7 @@ fn get_config_path() -> PathBuf {
         .join("config.json")
 }
 
-/// 读取配置
+/// 读取配置, 失败时回退到默认值
 #[tauri::command]
 pub fn get_config() -> AppConfig {
     let config_path = get_config_path();
@@ -74,7 +74,7 @@ pub fn get_config() -> AppConfig {
 pub fn save_config(config: AppConfig) -> Result<(), String> {
     let config_path = get_config_path();
     
-    // 确保目录存在
+    // 确保配置目录存在
     if let Some(parent) = config_path.parent() {
         fs::create_dir_all(parent)
             .map_err(|e| format!("创建配置目录失败: {}", e))?;

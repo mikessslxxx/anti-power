@@ -1,6 +1,17 @@
 /**
  * Manager Panel DOM 扫描与监听
- * 完全独立于 cascade-panel
+ *
+ * 本模块是 Manager 补丁的核心调度器，完全独立于 cascade-panel。
+ *
+ * 主要职责：
+ * - 扫描 DOM 中的内容区域并触发渲染
+ * - 监听 DOM 变更以处理新增内容
+ * - 管理延迟渲染队列，等待内容稳定后再处理
+ *
+ * 扫描策略：
+ * - 使用 MutationObserver 监听 DOM 变更
+ * - 通过 Good/Bad 按钮判断消息是否完成输出
+ * - 延迟渲染避免流式输出时频繁触发
  */
 
 import { CONTENT_SELECTOR, SECTION_SELECTOR } from './constants.js';

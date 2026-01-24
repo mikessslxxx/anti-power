@@ -1,6 +1,17 @@
 /**
  * Manager Panel Mermaid 图表渲染
- * 完全独立于 cascade-panel
+ *
+ * 本模块负责 Manager 窗口的 Mermaid 图表渲染，完全独立于 cascade-panel。
+ *
+ * 渲染流程：
+ * 1. 扫描代码块并检测 Mermaid 语法
+ * 2. 按需加载 Mermaid 库（CDN）
+ * 3. 使用 Trusted Types 安全渲染 SVG
+ * 4. 原代码块隐藏，渲染结果插入其前
+ *
+ * 特殊处理：
+ * - 使用 withTrustedHTML 绕过 Trusted Types 限制
+ * - 支持延迟渲染，等待内容稳定后再处理
  */
 
 import {

@@ -1,22 +1,22 @@
 /**
- * 连接 Antigravity 远程调试端口
- * 
- * 使用方法：
- * 1. 启动 Antigravity: & "E:\Program Files\Antigravity\Antigravity.exe" --remote-debugging-port=9222
+ * 连接 Antigravity 远程调试端口.
+ *
+ * 使用方法:
+ * 1. 启动 Antigravity: & "E:\\Program Files\\Antigravity\\Antigravity.exe" --remote-debugging-port=9222
  * 2. 复制终端显示的 WebSocket URL (ws://127.0.0.1:9222/devtools/browser/xxx)
- * 3. 运行: node connect-antigravity.js "ws://127.0.0.1:9222/devtools/browser/xxx"
+ * 3. 运行: node scripts/connect-antigravity.js "ws://127.0.0.1:9222/devtools/browser/xxx"
  */
 
 const { chromium } = require('playwright');
 
 async function main() {
-    // 从命令行参数获取 WebSocket URL
+    // 从命令行参数获取 WebSocket URL.
     const wsUrl = process.argv[2];
 
     if (!wsUrl) {
         console.log('❌ 请提供 WebSocket URL 作为参数！\n');
         console.log('使用方法:');
-        console.log('  node connect-antigravity.js "ws://127.0.0.1:9222/devtools/browser/xxxxxx"\n');
+        console.log('  node scripts/connect-antigravity.js "ws://127.0.0.1:9222/devtools/browser/xxxxxx"\n');
         console.log('WebSocket URL 可以在启动 Antigravity 时的终端输出中找到:');
         console.log('  DevTools listening on ws://127.0.0.1:9222/devtools/browser/xxxxxx\n');
         process.exit(1);
@@ -47,7 +47,7 @@ async function main() {
             }
         }
 
-        // 如果有页面，选择第一个进行 DOM 探索
+        // 如果有页面, 选择第一个进行 DOM 探索.
         if (contexts.length > 0 && contexts[0].pages().length > 0) {
             const firstPage = contexts[0].pages()[0];
             console.log('🔍 正在分析第一个页面的 DOM 结构...\n');
@@ -80,7 +80,7 @@ async function main() {
         console.log('\n📌 提示: 连接保持打开状态，你可以在脚本中添加更多调试代码');
         console.log('   按 Ctrl+C 退出\n');
 
-        // 保持脚本运行，方便进一步调试
+        // 保持脚本运行, 方便进一步调试.
         await new Promise(() => { });
 
     } catch (error) {

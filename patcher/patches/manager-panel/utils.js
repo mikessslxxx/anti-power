@@ -1,6 +1,17 @@
 /**
  * Manager Panel 工具函数
- * 完全独立于 cascade-panel
+ *
+ * 本模块提供 Manager 窗口补丁的通用工具函数，完全独立于 cascade-panel。
+ *
+ * 主要功能：
+ * - 动态资源加载（脚本、样式）
+ * - Trusted Types 安全执行环境
+ * - 剪贴板操作
+ * - 复制按钮创建与状态管理
+ *
+ * 特殊处理：
+ * - 支持 Trusted Types 环境下的 innerHTML 写入
+ * - AMD 模块加载器暂停/恢复机制
  */
 
 const TRUSTED_TYPES_POLICY_NAMES = [
