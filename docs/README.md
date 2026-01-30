@@ -6,8 +6,8 @@ This directory contains usage, maintenance, and reference documentation for Anti
 
 ## Guides / 指南
 
-- `guides/developer-guide.md`: Development and debugging guide (English)
-- `guides/developer-guide-zh.md`: 开发者文档 (中文)
+- `guides/developer-guide.md`: 开发者文档 (中文)
+- `guides/developer-guide_EN.md`: Development and debugging guide (English)
 - `guides/release-guide.md`: Release process and version synchronization / 发布流程与版本同步
 
 ## Reference / 参考
