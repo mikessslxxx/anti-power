@@ -15,7 +15,7 @@
  */
 
 import { CONTENT_SELECTOR } from './constants.js';
-import { addFeedbackCopyButtons, ensureContentCopyButton } from './copy.js';
+import { ensureContentCopyButton } from './copy.js';
 import { renderMath } from './math.js';
 import { renderMermaid } from './mermaid.js';
 
@@ -236,10 +236,6 @@ const flushScan = () => {
     nodes.forEach(node => {
         if (node.isConnected) scan(node);
     });
-
-    if (config.copyButton) {
-        addFeedbackCopyButtons();
-    }
 };
 
 /**
@@ -299,9 +295,6 @@ const scheduleScan = (nodes) => {
 const init = () => {
     const root = getRoot();
     scan(root);
-    if (config.copyButton) {
-        addFeedbackCopyButtons();
-    }
 
     const observer = new MutationObserver((mutations) => {
         const nodesToScan = [];

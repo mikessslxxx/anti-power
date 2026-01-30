@@ -41,8 +41,12 @@ export const ensureMathEngine = () => {
         }
 
         try {
-            await loadStyle(KATEX_CSS_URL);
-            await loadScript(KATEX_JS_URL);
+            // 并行加载 CSS 和主 JS，加快首次渲染速度
+            await Promise.all([
+                loadStyle(KATEX_CSS_URL),
+                loadScript(KATEX_JS_URL),
+            ]);
+            // auto-render 依赖 katex，必须串行加载
             await loadScript(KATEX_AUTO_URL);
             if (window.katex && window.renderMathInElement) {
                 mathEngine = 'katex';
