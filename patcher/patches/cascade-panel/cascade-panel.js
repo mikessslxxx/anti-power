@@ -8,7 +8,7 @@ import { loadStyle } from './utils.js';
 const DEFAULT_CONFIG = {
     mermaid: true,
     math: true,
-    mathRenderMode: 'deferred', // 'classic' | 'deferred'
+    mathRenderMode: 'classic', // 'classic' | 'deferred'
     copyButton: true,
     tableColor: true,
     fontSizeEnabled: true,
@@ -77,4 +77,3 @@ const loadTableFix = () => {
     const { start } = await import('./scan.js');
     start(config);
 })();
-

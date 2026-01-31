@@ -25,7 +25,7 @@ import { renderMermaid } from './mermaid.js';
 let config = {
     mermaid: true,
     math: true,
-    mathRenderMode: 'deferred', // 'classic' | 'deferred'
+    mathRenderMode: 'classic', // 'classic' | 'deferred'
     copyButton: true,
     tableColor: true,
     fontSizeEnabled: true,
@@ -154,11 +154,9 @@ const scheduleDeferredRender = (contentEl) => {
 
 /**
  * 渲染单个内容区
- * 
- * 根据 mathRenderMode 配置决定渲染策略：
- * - 'classic': v2.0.1 模式，立即渲染，不等待反馈按钮
- * - 'deferred': 当前模式，等待完成信号或稳定后再处理
- * 
+ *
+ * 延迟模式：等待完成信号或内容稳定后再处理
+ *
  * @param {Element} contentEl
  * @param {boolean} [force=false] - true 表示跳过完成信号检查
  * @returns {void}
@@ -168,16 +166,6 @@ const renderContentNode = (contentEl, force = false) => {
 
     if (config.copyButton) {
         ensureContentCopyButton(contentEl);
-    }
-
-    // 经典模式 (v2.0.1): 直接渲染，不走延迟队列
-    if (config.mathRenderMode === 'classic') {
-        clearDeferredRender(contentEl);
-        if (config.math) {
-            void renderMath(contentEl);
-        }
-        renderMermaidWithin(contentEl);
-        return;
     }
 
     // 延迟模式 (当前): 等待反馈按钮或内容稳定
@@ -200,7 +188,7 @@ const renderContentNode = (contentEl, force = false) => {
  * @param {Element} root
  * @returns {void}
  */
-const scan = (root) => {
+const scanDeferred = (root) => {
     if (!root || !root.isConnected) return;
 
     // 检查根节点本身及子节点是否匹配内容选择器
@@ -239,25 +227,142 @@ const getRoot = () =>
     document.getElementById('react-app') ||
     document.body;
 
-let pendingNodes = new Set();
-let scheduled = false;
+// -------------------------
+// Classic mode (v2.0.1)
+// -------------------------
+
+/**
+ * 扫描根节点并处理需要增强的内容区域（v2.0.1 原样逻辑）
+ * @param {Element} root
+ * @returns {void}
+ */
+const scanClassic = (root) => {
+    if (!root || !root.isConnected) return;
+
+    // 检查根节点本身及子节点是否匹配内容选择器
+    const contentNodes = [];
+    if (root.matches && root.matches(CONTENT_SELECTOR)) {
+        contentNodes.push(root);
+    }
+    contentNodes.push(...root.querySelectorAll(CONTENT_SELECTOR));
+
+    contentNodes.forEach((node) => {
+        if (config.copyButton) {
+            ensureContentCopyButton(node);
+        }
+        if (config.math) {
+            void renderMath(node);
+        }
+    });
+
+    if (config.mermaid) {
+        const mermaidNodes = [];
+        if (root.matches && root.matches('[class*="language-mermaid"]')) {
+            mermaidNodes.push(root);
+        }
+        mermaidNodes.push(...root.querySelectorAll('[class*="language-mermaid"]'));
+
+        mermaidNodes.forEach((node) => {
+            void renderMermaid(node);
+        });
+    }
+};
+
+let pendingNodesClassic = new Set();
+let scheduledClassic = false;
+
+/**
+ * 批量处理待扫描节点（v2.0.1 原样逻辑）
+ */
+const flushScanClassic = () => {
+    scheduledClassic = false;
+    const nodes = [...pendingNodesClassic];
+    pendingNodesClassic.clear();
+
+    nodes.forEach((node) => {
+        if (node.isConnected) scanClassic(node);
+    });
+
+    if (config.copyButton) {
+        addFeedbackCopyButtons();
+    }
+};
+
+/**
+ * 调度扫描任务（v2.0.1 原样逻辑）
+ * @param {NodeList|Array} nodes
+ */
+const scheduleScanClassic = (nodes) => {
+    let hasElements = false;
+    const enqueue = (target) => {
+        if (!target) return;
+        const contentRoot = target.closest ? target.closest(CONTENT_SELECTOR) : null;
+        pendingNodesClassic.add(contentRoot || target);
+        hasElements = true;
+    };
+
+    nodes.forEach((node) => {
+        if (node.nodeType === Node.ELEMENT_NODE) {
+            enqueue(node);
+            return;
+        }
+        if (node.parentElement) {
+            enqueue(node.parentElement);
+        }
+    });
+
+    if (hasElements && !scheduledClassic) {
+        scheduledClassic = true;
+        requestAnimationFrame(flushScanClassic);
+    }
+};
+
+/**
+ * 初始化扫描与 MutationObserver（v2.0.1 原样逻辑）
+ * @returns {void}
+ */
+const initClassic = () => {
+    const root = getRoot();
+    scanClassic(root);
+    if (config.copyButton) {
+        addFeedbackCopyButtons();
+    }
+
+    const observer = new MutationObserver((mutations) => {
+        const nodesToScan = [];
+        mutations.forEach((mutation) => {
+            if (mutation.type === 'characterData') {
+                if (mutation.target.parentElement) {
+                    nodesToScan.push(mutation.target.parentElement);
+                }
+                return;
+            }
+            if (mutation.addedNodes.length > 0) {
+                mutation.addedNodes.forEach((node) => nodesToScan.push(node));
+            }
+        });
+        if (nodesToScan.length > 0) {
+            scheduleScanClassic(nodesToScan);
+        }
+    });
+
+    observer.observe(root, { childList: true, subtree: true, characterData: true });
+};
+
+let pendingNodesDeferred = new Set();
+let scheduledDeferred = false;
 
 /**
  * 批量处理待扫描节点
  */
-const flushScan = () => {
-    scheduled = false;
-    const nodes = [...pendingNodes];
-    pendingNodes.clear();
+const flushScanDeferred = () => {
+    scheduledDeferred = false;
+    const nodes = [...pendingNodesDeferred];
+    pendingNodesDeferred.clear();
 
     nodes.forEach(node => {
-        if (node.isConnected) scan(node);
+        if (node.isConnected) scanDeferred(node);
     });
-
-    // 经典模式 (v2.0.1): 扫描结束后调用 addFeedbackCopyButtons
-    if (config.mathRenderMode === 'classic' && config.copyButton) {
-        addFeedbackCopyButtons();
-    }
 };
 
 /**
@@ -284,19 +389,13 @@ const resolveScanRoot = (target) => {
     return target;
 };
 
-const scheduleScan = (nodes) => {
+const scheduleScanDeferred = (nodes) => {
     let hasElements = false;
     const enqueue = (target) => {
         if (!target) return;
-        // 经典模式使用简单的 enqueue 逻辑 (v2.0.1)
-        if (config.mathRenderMode === 'classic') {
-            const contentRoot = target.closest ? target.closest(CONTENT_SELECTOR) : null;
-            pendingNodes.add(contentRoot || target);
-        } else {
-            const scanRoot = resolveScanRoot(target);
-            if (!scanRoot) return;
-            pendingNodes.add(scanRoot);
-        }
+        const scanRoot = resolveScanRoot(target);
+        if (!scanRoot) return;
+        pendingNodesDeferred.add(scanRoot);
         hasElements = true;
     };
 
@@ -310,9 +409,9 @@ const scheduleScan = (nodes) => {
         }
     });
 
-    if (hasElements && !scheduled) {
-        scheduled = true;
-        requestAnimationFrame(flushScan);
+    if (hasElements && !scheduledDeferred) {
+        scheduledDeferred = true;
+        requestAnimationFrame(flushScanDeferred);
     }
 };
 
@@ -320,14 +419,9 @@ const scheduleScan = (nodes) => {
  * 初始化扫描与 MutationObserver
  * @returns {void}
  */
-const init = () => {
+const initDeferred = () => {
     const root = getRoot();
-    scan(root);
-
-    // 经典模式 (v2.0.1): 初始化时调用 addFeedbackCopyButtons
-    if (config.mathRenderMode === 'classic' && config.copyButton) {
-        addFeedbackCopyButtons();
-    }
+    scanDeferred(root);
 
     const observer = new MutationObserver((mutations) => {
         const nodesToScan = [];
@@ -343,14 +437,14 @@ const init = () => {
             }
         });
         if (nodesToScan.length > 0) {
-            scheduleScan(nodesToScan);
+            scheduleScanDeferred(nodesToScan);
         }
     });
 
     observer.observe(root, { childList: true, subtree: true, characterData: true });
 
     // 延迟模式: 如果配置为将底部按钮移动到反馈区，设置定时扫描
-    if (config.mathRenderMode !== 'classic' && config.copyButton && config.copyButtonBottomPosition === 'feedback') {
+    if (config.copyButton && config.copyButtonBottomPosition === 'feedback') {
         const scanFeedback = () => {
             addFeedbackCopyButtons();
         };
@@ -371,8 +465,18 @@ export const start = (userConfig = {}) => {
     config = { ...config, ...userConfig };
 
     if (document.readyState === 'loading') {
-        document.addEventListener('DOMContentLoaded', init);
+        document.addEventListener('DOMContentLoaded', () => {
+            if (config.mathRenderMode === 'classic') {
+                initClassic();
+            } else {
+                initDeferred();
+            }
+        });
     } else {
-        init();
+        if (config.mathRenderMode === 'classic') {
+            initClassic();
+        } else {
+            initDeferred();
+        }
     }
 };
