@@ -59,26 +59,55 @@ Anti-Power 以补丁方式增强 Antigravity 的侧边栏和 Manager 窗口, 提
 效果截图见 [screenshots.md](docs/reference/screenshots.md).
 
 ---
-
 ## 📥 下载安装
+<details>
+<summary> 展开查看( Windows, Mac, Linux ) </summary>
 
 ### Windows（推荐）
 
-1. 前往 Releases 页面下载 `anti-power.exe`
+1. 前往 Releases 页面下载 `anti-power-windows.exe`
 2. 双击运行, 无需安装
 3. 程序自动检测 Antigravity 安装路径
 4. 选择需要的功能, 点击 安装补丁
 5. 重启 Antigravity 或重新打开 Manager 窗口查看效果
 
-如需手动安装, 下载 Release 中的补丁压缩包 (例如 `anti-power-patches.zip`), 并参考 [manual-install.md](patcher/patches/manual-install.md).
+如需手动安装, 下载 Release 中的补丁压缩包 ( `anti-power-patches.zip`), 并参考 [manual-install.md](patcher/patches/manual-install.md).
 
-### macOS & Linux
+### macOS（推荐）
 
-现支持使用 [anti-power.sh](patcher/patches/anti-power.sh) 脚本一键替换
+1. 下载 `anti-power-macos-x64.dmg` (Intel) 或 `anti-power-macos-arm64.dmg` (Apple Silicon)
+2. 打开 DMG, 将 `anti-power.app` 拖拽到 Applications (把应用复制到系统应用程序目录)
+3. 运行 `anti-power.app`, 按提示安装补丁
 
-> ⚠️ **注意**: 由于权限原因, 建议直接使用 macOS 自带的 **Terminal (终端)** 运行脚本
+#### macOS 提示 "已损坏" 的临时方案
+
+如首次打开提示 "已损坏" 或 "无法打开", 可先尝试以下临时方案:
 
 ```bash
+# 清除隔离属性 (请按实际安装路径调整)
+xattr -cr /Applications/anti-power.app
+```
+
+或: 右键点击应用 -> 选择 "打开" (而不是双击).
+
+### Linux（推荐）
+
+1. 下载 `anti-power-linux.AppImage`
+2. 赋予执行权限并运行, 按提示安装补丁
+
+```bash
+chmod +x ./anti-power-linux.AppImage
+./anti-power-linux.AppImage
+```
+
+### macOS & Linux（脚本方式, 备用）
+
+当安装器无法使用, 或你更习惯命令行/需要批量安装时, 可下载 Release 中的 `anti-power-patches.zip`, 解压后运行其中的 `anti-power.sh` 脚本一键替换.
+
+> ⚠️ **注意**: 需要管理员权限, 请在终端运行
+
+```bash
+# 在补丁包解压目录执行
 chmod +x ./anti-power.sh
 sudo ./anti-power.sh
 ```
@@ -86,6 +115,7 @@ sudo ./anti-power.sh
 如需手动安装，请参考 [manual-install.md](patcher/patches/manual-install.md).
 
 ---
+</details>
 
 ## 注意事项
 
@@ -98,7 +128,7 @@ sudo ./anti-power.sh
 
 ## 文档导航
 
-- 项目结构与分类说明: [project-structure.md](docs/reference/project-structure.md)
+- 项目结构与分类说明: 见 [docs/README.md](docs/README.md)
 - 效果截图: [screenshots.md](docs/reference/screenshots.md)
 - 已知问题: [known-issues.md](docs/reference/known-issues.md)
 - 开发者文档: [developer-guide.md](docs/guides/developer-guide.md) | [English](docs/guides/developer-guide_EN.md)
@@ -134,9 +164,9 @@ sudo ./anti-power.sh
 
 感谢以下贡献者对本项目的支持:
 
-- [@mikessslxxx](https://github.com/mikessslxxx) - 数学公式渲染、Manager 功能增强
-- [@syanle](https://github.com/syanle) - Linux 支持
-- [@Sophomoresty](https://github.com/Sophomoresty) - 复制功能优化、开发者文档
+- [@mikessslxxx](https://github.com/mikessslxxx) 
+- [@syanle](https://github.com/syanle) 
+- [@Sophomoresty](https://github.com/Sophomoresty)
 
 ---
 
@@ -149,3 +179,5 @@ MIT License
 <p align="center">
   💡 如果这个项目对你有帮助, 欢迎 Star ⭐
 </p>
+
+
