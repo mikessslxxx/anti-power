@@ -16,7 +16,9 @@ The panel shows the selected conversation's latest model request speed, time to 
 
 On macOS and Linux, installing configures the status line for an existing agy profile (opt in to replace an existing or disabled setting; uninstalling restores it). For manual setup, set `statusLine.command` to `node "/absolute/path/to/anti-power-usage/sidecars/panel/lib/statusline.mjs"`. It centers speed, first-token latency, and context usage (preferring agy's native percentage) between the shortcut hint and the active mode, model, and effort, and runs without the desktop sidecar.
 
-On macOS, **Launch Antigravity with debugging** in Anti-Power's plugin manager cold-starts the app (after quitting it) with a random loopback debugging port for desktop overlays; panel and CLI metrics work without it.
+The CLI status line keeps the conversation's latest measured speed and first-token latency, falling back to a matching usage-monitor snapshot within 20 seconds. Until speed is available, it shows the CLI activity state.
+
+On macOS, quit the Antigravity App and click **Launch Antigravity with debugging** in Anti-Power's plugin manager; the sidecar uses the App's loopback debugging port to show the same three metrics in each window's upper-right corner. The strip follows each window's conversation even with the panel closed.
 
 ## Data
 

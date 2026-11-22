@@ -1,7 +1,7 @@
 {
   "name": "anti-power-usage",
   "displayName": "Anti-Power Usage",
-  "version": "5.2.0",
+  "version": "5.2.1",
   "description": "Per-request records for Antigravity sessions: content, tokens, cache, speed, and cost.",
   "logo": "assets/logo.svg",
   "license": "GPL-3.0-only",

@@ -1,6 +1,6 @@
 // Anti-Power: trajectory and annotation readers only; store discovery lives in lib/stores.mjs
 
-import { existsSync, readFileSync } from 'node:fs';
+import { closeSync, existsSync, lstatSync, openSync, readFileSync, readSync } from 'node:fs';
 import { basename, join } from 'node:path';
 import {
   SQLITE_IN_CHUNK_SIZE,
@@ -20,6 +20,25 @@ import {
 } from './proto-wire.mjs';
 
 const UUID_FILE_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
+// Wait until agy initializes the schema before acquiring a SQLite shared lock
+function hasTrajectorySchema(dbPath) {
+  const fd = openSync(dbPath, 'r');
+  const header = Buffer.alloc(100);
+  try {
+    if (readSync(fd, header, 0, header.length, 0) !== header.length ||
+        header.toString('latin1', 0, 16) !== 'SQLite format 3\0') return false;
+  } finally {
+    closeSync(fd);
+  }
+  if (header.readUInt32BE(40) !== 0) return true;
+  // In WAL mode, the schema can live solely in the WAL until checkpoint
+  if (header[18] !== 2) return false;
+  const size = header.readUInt16BE(16);
+  const pageSize = size === 1 ? 65536 : size;
+  const wal = lstatSync(dbPath + '-wal', { throwIfNoEntry: false });
+  return Boolean(wal?.isFile() && wal.size >= 32 + 24 + pageSize);
+}
 
 /**
  * 从 `annotations/<cascadeId>.pbtxt` 文本内容中提取顶层 `title` 字段。
@@ -1200,6 +1219,7 @@ export function readLocalSqliteTrajectory(dbFilePath, options = {}) {
   const fullText = Boolean(options?.fullText);
 
   try {
+    if (!hasTrajectorySchema(dbFilePath)) return null;
     return withReadOnlySqliteDb(dbFilePath, (db) => {
       let trajectoryType = 0;
       try {

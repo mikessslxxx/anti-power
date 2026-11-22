@@ -5,7 +5,7 @@
 <h1 align="center">Anti-Power</h1>
 
 <p align="center">
-  <a href="https://github.com/mikessslxxx/anti-power/releases"><img src="https://img.shields.io/badge/版本-v5.2.0-blue.svg" alt="版本"></a>
+  <a href="https://github.com/mikessslxxx/anti-power/releases"><img src="https://img.shields.io/badge/版本-v5.2.1-blue.svg" alt="版本"></a>
   <img src="https://img.shields.io/badge/Antigravity_App-2.34.0-green.svg" alt="Antigravity App">
   <img src="https://img.shields.io/badge/Antigravity_CLI-1.5.14-green.svg" alt="Antigravity CLI">
 </p>
@@ -74,7 +74,7 @@ Anti-Power 附带 Antigravity 插件 **Anti-Power Usage**, 记录每次模型请
 
 侧栏顶部显示当前会话的请求速度, 首字延迟和上下文占比. 展开可查看已用 token, 窗口上限和用量构成. Antigravity CLI 状态栏也可独立显示这三项指标, 例如 `48.8 t/s | 4.4s | ◎ 19%`.
 
-macOS 和 Linux 安装插件时会为已有 CLI 配置状态栏 (已有其他配置或已关闭时可勾选替换, 卸载时还原). macOS 如需桌面顶栏挂载, 退出 App 后在插件弹窗点击 **启动 Antigravity 并启用挂载**.
+macOS 和 Linux 安装插件时会为已有 CLI 配置状态栏 (已有其他配置或已关闭时可勾选替换, 卸载时还原). macOS 如需在窗口右上角挂载这三项指标 (收起侧栏后仍会更新), 退出 App 后在插件弹窗点击 **启动 Antigravity 并启用挂载**.
 
 会话的所有本地副本删除后, 已记录用量会并入匿名的 "已删除会话" (外部移走文件约 60 秒后确认归并). 价格表来自 [antigravity-usage-monitor](https://github.com/yuhuan-dev/antigravity-usage-monitor), 可在 Anti-Power 的插件弹窗中更新; 需要配额监控可改用该插件.
 

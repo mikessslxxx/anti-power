@@ -5,9 +5,9 @@ import { join, resolve } from 'node:path';
 import { pathToFileURL } from 'node:url';
 import { stripVTControlCharacters } from 'node:util';
 import { readLocalSqliteTrajectory } from '../vendor/usage-monitor/backend/cli-sqlite-reader.mjs';
-import { extractModelSteps } from '../vendor/usage-monitor/trajectory-metrics.mjs';
-import { sessionMetrics } from './metrics.mjs';
-import { sessionFile } from './stores.mjs';
+import { extractModelSteps, speedMetric } from '../vendor/usage-monitor/trajectory-metrics.mjs';
+import { sessionContext } from '../vendor/usage-monitor/session-context.mjs';
+import { checkDirectory, regularFile, sessionFile } from './stores.mjs';
 
 const UUID = /^[\da-f]{8}(?:-[\da-f]{4}){3}-[\da-f]{12}$/i;
 
@@ -83,28 +83,79 @@ export function formatStatusLine(input, parts, settings = {}) {
   return shorten(model || right || full, width);
 }
 
+// Keep the latest valid speed and TTFT independently while a new turn streams
+function lastTimings(rows) {
+  let speed = null;
+  let ttft = null;
+  for (let i = rows.length - 1; i >= 0 && (speed === null || ttft === null); i--) {
+    const row = rows[i];
+    if (row.isCompactionStep) continue;
+    speed ??= speedMetric(row).value;
+    if (ttft === null && Number.isFinite(row.ttftSec) && row.ttftSec >= 0) ttft = row.ttftSec;
+  }
+  return { speed, ttft };
+}
+
+// usage-monitor publishes a short-lived snapshot when its background monitor is running
+function recentSnapshot(base, id) {
+  const now = Date.now();
+  let latest;
+  for (const client of ['antigravity-cli', 'antigravity']) {
+    const dir = join(base, client, 'sidecar_data', 'usage-monitor', 'panel', 'data');
+    try {
+      checkDirectory(base, dir);
+      const file = join(dir, 'cli-status-snapshot.json');
+      if (regularFile(file).size > 65536n) continue;
+      const snap = JSON.parse(readFileSync(file, 'utf8'));
+      const age = now - snap.updatedAtMs;
+      if (snap.activeConversation?.cascadeId !== id || !Number.isFinite(snap.updatedAtMs) ||
+          age < 0 || age > 20_000 || (latest && snap.updatedAtMs <= latest.updatedAtMs)) continue;
+      latest = snap;
+    } catch {
+      // The upstream plugin and its snapshot are optional
+    }
+  }
+  return latest?.activeConversation;
+}
+
 export function cliStatusLine(input, env = process.env, home = homedir()) {
   const transcript = String(input.transcript_path || input.transcriptPath || '').split(/[\\/]/);
   const id = [input.conversation_id, input.conversationId, input.session_id, input.sessionId,
     env.ANTIGRAVITY_CONVERSATION_ID, ...transcript.reverse()].find((value) => UUID.test(value));
   const base = resolve(env.ANTIGRAVITY_GEMINI_DIR || join(home, '.gemini'));
-  let metrics;
+  let speed = null;
+  let ttft = null;
+  let context;
   if (id) {
+    const key = id.toLowerCase();
     try {
-      const file = sessionFile({ home: base, root: join(base, 'antigravity-cli') }, id.toLowerCase() + '.db');
-      const data = readLocalSqliteTrajectory(file.dbPath, { cascadeId: id });
-      if (data) metrics = sessionMetrics(extractModelSteps(data.steps, data.generatorMetadata));
+      const file = sessionFile({ home: base, root: join(base, 'antigravity-cli') }, key + '.db');
+      const data = readLocalSqliteTrajectory(file.dbPath, { cascadeId: key });
+      if (data) {
+        const rows = extractModelSteps(data.steps, data.generatorMetadata);
+        ({ speed, ttft } = lastTimings(rows));
+        context = sessionContext(rows);
+      }
     } catch {
       // A new session may not have a database yet
     }
+    if (speed === null || ttft === null) {
+      const snapshot = recentSnapshot(base, key);
+      if (Number.isFinite(snapshot?.latestTokPerSec) && snapshot.latestTokPerSec >= 0) speed ??= snapshot.latestTokPerSec;
+      if (Number.isFinite(snapshot?.latestTtftSec) && snapshot.latestTtftSec >= 0) ttft ??= snapshot.latestTtftSec;
+    }
   }
   const nativePct = input.context_window?.used_percentage;
-  const { used, limit } = metrics?.context ?? {};
+  const { used, limit } = context ?? {};
   const pct = Number.isFinite(nativePct) ? nativePct : limit && used != null ? 100 * used / limit : null;
-  const speed = metrics?.speed;
-  const ttft = metrics?.ttft;
+  const state = String(input.agent_state || '').toLowerCase();
+  const zh = /^zh/i.test(env.LC_ALL || env.LC_MESSAGES || env.LANG || '');
+  let activity = '— t/s';
+  if (['running', 'streaming', 'executing', 'thinking'].includes(state)) activity = zh ? '生成中…' : 'Gen…';
+  if (state === 'idle') activity = zh ? '空闲' : 'Idle';
+  if (['waiting', 'awaiting_approval'].includes(state)) activity = zh ? '等待中' : 'Waiting';
   const parts = [
-    speed != null ? speed.toFixed(1) + ' t/s' : '— t/s',
+    speed != null ? speed.toFixed(1) + ' t/s' : activity,
     ttft != null ? ttft.toFixed(1) + 's' : '—',
     '◎ ' + (pct != null ? Math.round(Math.min(100, Math.max(0, pct))) + '%' : '—'),
   ];

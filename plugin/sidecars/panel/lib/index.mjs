@@ -48,7 +48,7 @@ export class UsageIndex {
   #minIntervalMs;
   #ledger;
   #files = new Map();
-  #lastMetrics;
+  #metrics = new Map();
   #lastScanMs = 0;
   #lastError = '';
   #partial = null;
@@ -191,6 +191,9 @@ export class UsageIndex {
         dirty = true;
       }
     }
+    for (const id of this.#metrics.keys()) {
+      if (!files.has(id)) this.#metrics.delete(id);
+    }
     this.#files = files;
     this.#ledger = ledger;
     if (damaged && this.#partial) {
@@ -222,25 +225,24 @@ export class UsageIndex {
     }
   }
 
-  #metricsFor(id) {
+  metricsFor(id) {
     const copies = this.#files.get(id);
     if (!copies) return null;
     const signature = JSON.stringify(copies.map(({ store, file }) => [store.key, file.sig]));
-    if (this.#lastMetrics?.id === id && this.#lastMetrics.signature === signature) {
-      return this.#lastMetrics.metrics;
-    }
+    const cached = this.#metrics.get(id);
+    if (cached?.signature === signature) return cached.metrics;
     let partial = false;
     const batch = readCopies(copies, false, () => { partial = true; });
     if (!batch) return null;
     const metrics = sessionMetrics(batch.data.rows);
-    if (!partial) this.#lastMetrics = { id, signature, metrics };
+    if (!partial) this.#metrics.set(id, { signature, metrics });
     return metrics;
   }
 
   status({ id } = {}) {
     this.refresh();
     return {
-      metrics: this.#metricsFor(id),
+      metrics: this.metricsFor(id),
       sqlite: hasBuiltinNodeSqlite(),
       catalog: { version: catalogInfo.version, updatedAt: catalogInfo.updatedAt },
       sessions: Object.values(this.#ledger.sessions).filter((s) => s.missingSince === undefined).length,

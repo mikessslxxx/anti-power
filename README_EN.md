@@ -5,7 +5,7 @@
 <h1 align="center">Anti-Power</h1>
 
 <p align="center">
-  <a href="https://github.com/mikessslxxx/anti-power/releases"><img src="https://img.shields.io/badge/Version-v5.2.0-blue.svg" alt="Version"></a>
+  <a href="https://github.com/mikessslxxx/anti-power/releases"><img src="https://img.shields.io/badge/Version-v5.2.1-blue.svg" alt="Version"></a>
   <img src="https://img.shields.io/badge/Antigravity_App-2.34.0-green.svg" alt="Antigravity App">
   <img src="https://img.shields.io/badge/Antigravity_CLI-1.5.14-green.svg" alt="Antigravity CLI">
 </p>
@@ -74,7 +74,7 @@ Use the usage plugin button in the title bar to install, update, or uninstall it
 
 The strip at the top of the panel shows request speed, time to first token, and context utilization for the current session. Expand it for the token count, window limit, and usage breakdown. The Antigravity CLI status line also works independently and can display, for example, `48.8 t/s | 4.4s | ◎ 19%`.
 
-On macOS and Linux, installation configures the status line for an existing CLI profile (with an opt-in to replace an existing or disabled setting, restored on uninstall). For desktop overlays on macOS, quit the App and click **Launch Antigravity with debugging** in the plugin dialog.
+On macOS and Linux, installation configures the status line for an existing CLI profile (with an opt-in to replace an existing or disabled setting, restored on uninstall). On macOS, to show the same three metrics in each window's upper-right corner (updating even with the side panel closed), quit the App and click **Launch Antigravity with debugging** in the plugin dialog.
 
 Once all local copies of a session are gone, its recorded usage is folded into an anonymous "Deleted sessions" row (external removals are confirmed after 60 seconds). Prices come from [antigravity-usage-monitor](https://github.com/yuhuan-dev/antigravity-usage-monitor) and can be updated from Anti-Power's plugin dialog; for quota tracking, use that plugin instead.
 

@@ -5,6 +5,7 @@ import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { Response, SidecarApp } from 'sidecar_sdk';
 import { UsageIndex } from './lib/index.mjs';
+import { startDesktopTopbar } from './lib/desktop-topbar.mjs';
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 const PLUGIN_ROOT = join(HERE, '..', '..');
@@ -59,3 +60,4 @@ app.api('/api/session', (data) => json(index.session(data)), 'POST');
 app.api('/api/summary', (data) => json(index.summary(data)), 'POST');
 await app.run();
 index.startCollecting();
+startDesktopTopbar(id => index.metricsFor(id));

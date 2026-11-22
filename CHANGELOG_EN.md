@@ -4,6 +4,14 @@
 
 ---
 
+## v5.2.1 (2026-11-22)
+
+### Anti-Power Usage
+- Fix the missing title-bar usage strip in the Antigravity App: each window's upper-right corner shows the current conversation's output speed, time to first token, and context usage, following conversation switches and staying visible with the side panel closed
+- Keep the current conversation's latest measured speed and first-token latency in the CLI status line, showing the activity state until speed is available; skip uninitialized SQLite files to avoid lock contention
+
+---
+
 ## v5.2.0 (2026-11-22)
 
 ### Anti-Power Usage
