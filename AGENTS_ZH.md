@@ -16,7 +16,8 @@ Anti-Power 附带 Anti-Power Usage, 用于查看本地请求用量和费用. 配
   - `antigravity_clean.rs`: 会话清理
   - `cleanup_extras.rs`: Antigravity App 窗口状态和缓存, CC Switch 同步记录, 用量账本清理
   - `usage_ledger.rs`: 将已删除会话折入 Anti-Power Usage 的匿名合计
-  - `plugin_install.rs`: 插件安装, 卸载和价格表更新
+  - `client_versions.rs`: 读取本机 App 和 CLI 版本, 供会话来源选择器显示
+  - `plugin_install.rs`: 插件安装和卸载, CLI 状态栏配置和还原, 价格表更新及 macOS 启动入口
   - `sessions.rs`: 会话相关的 Tauri 命令 (`scan_sessions`, `load_session_messages`, `delete_sessions`)
 - `patcher/src/`: Vue 前端, 主界面是 `components/SessionViewer.vue`
 - `plugin/`: Anti-Power Usage 的 sidecar 和随附价格表. Vue 面板源码在 `patcher/plugin-ui/`.
@@ -32,7 +33,7 @@ Anti-Power 附带 Anti-Power Usage, 用于查看本地请求用量和费用. 配
 
 会话由来源和 UUID 共同确定. 在每个根目录下, 一个会话可能出现在 `conversations/`, `brain/`, `annotations/`, `presence/`, `conversation_summaries.db` (摘要, 全文索引, 父子关系), 摘要索引, `cache/last_conversations.json`, `cache/conversation_metadata.json`, `history.jsonl` (Antigravity CLI 的输入历史) 和插件的 `sidecar_data/`. 存储目录之外, Antigravity App 在 `app_storage.json` 中保存窗口状态, CC Switch 在 `~/.cc-switch/cc-switch.db` 及其备份中保存同步进度. 清理和保留的范围见 README.
 
-最近在 macOS 上核对的版本是 Antigravity App 2.33.0 和 Antigravity CLI 1.5.12. Antigravity IDE (`~/.gemini/antigravity-ide`) 不在范围内.
+最近在 macOS 上核对的版本是 Antigravity App 2.34.0 和 Antigravity CLI 1.5.14. Antigravity IDE (`~/.gemini/antigravity-ide`) 不在范围内.
 
 ## 清理规则
 

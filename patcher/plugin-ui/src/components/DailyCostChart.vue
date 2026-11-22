@@ -1,6 +1,6 @@
 <script setup lang="ts">
 // Daily cost columns: one series, so the card title names it and no legend is drawn
-import { computed, ref } from "vue";
+import { computed, ref, watch } from "vue";
 import { t } from "../i18n";
 import { compact, localDay, money } from "../format";
 import type { Summary } from "../types";
@@ -10,7 +10,16 @@ const props = defineProps<{ days: Summary["byDay"] }>();
 const showTable = ref(false);
 const hover = ref<number | null>(null);
 
-const WIDTH = 640;
+const chart = ref<HTMLElement | null>(null);
+const width = ref(640);
+watch(chart, (element, _, onCleanup) => {
+  if (!element) return;
+  const observer = new ResizeObserver(([entry]) => {
+    width.value = Math.max(1, entry.contentRect.width);
+  });
+  observer.observe(element);
+  onCleanup(() => observer.disconnect());
+});
 const HEIGHT = 180;
 const PAD = { top: 12, right: 8, bottom: 22, left: 44 };
 const MAX_DAYS = 92;
@@ -42,9 +51,9 @@ const niceMax = computed(() => {
   return ([1, 2, 5, 10].find((m) => m * power >= max) ?? 10) * power;
 });
 
-const plotW = WIDTH - PAD.left - PAD.right;
+const plotW = computed(() => Math.max(1, width.value - PAD.left - PAD.right));
 const plotH = HEIGHT - PAD.top - PAD.bottom;
-const band = computed(() => plotW / Math.max(series.value.length, 1));
+const band = computed(() => plotW.value / Math.max(series.value.length, 1));
 const barW = computed(() => Math.max(2, Math.min(24, band.value - 2)));
 const y = (v: number) => PAD.top + plotH - (v / niceMax.value) * plotH;
 const ticks = computed(() => [0, niceMax.value / 2, niceMax.value]);
@@ -62,14 +71,14 @@ function column(i: number, cost: number): string {
 }
 
 // Label a handful of days so they never collide
-const labelEvery = computed(() => Math.max(1, Math.ceil(series.value.length / 8)));
+const labelEvery = computed(() => Math.max(1, Math.ceil(series.value.length / Math.max(1, Math.min(8, Math.floor(plotW.value / 48))))));
 
 const tip = computed(() => {
   if (hover.value === null) return null;
   const d = series.value[hover.value];
   if (!d) return null;
   const x = PAD.left + (hover.value + 0.5) * band.value;
-  return { ...d, left: `${(x / WIDTH) * 100}%`, top: `${(y(d.cost) / HEIGHT) * 100}%` };
+  return { ...d, left: `clamp(70px, ${(x / width.value) * 100}%, calc(100% - 70px))`, top: `${(y(d.cost) / HEIGHT) * 100}%` };
 });
 </script>
 
@@ -92,10 +101,10 @@ const tip = computed(() => {
         </tr>
       </tbody>
     </table>
-    <div v-else class="chart" @pointerleave="hover = null">
-      <svg :viewBox="`0 0 ${WIDTH} ${HEIGHT}`" role="img" :aria-label="t('dailyCost')">
+    <div v-else ref="chart" class="chart" @pointerleave="hover = null">
+      <svg :viewBox="`0 0 ${width} ${HEIGHT}`" role="img" :aria-label="t('dailyCost')">
         <g v-for="v in ticks" :key="v">
-          <line :x1="PAD.left" :x2="WIDTH - PAD.right" :y1="y(v)" :y2="y(v)"
+          <line :x1="PAD.left" :x2="width - PAD.right" :y1="y(v)" :y2="y(v)"
             :class="v === 0 ? 'baseline' : 'grid'" />
           <text :x="PAD.left - 6" :y="y(v)" class="axis" text-anchor="end" dominant-baseline="middle">
             {{ money(v) }}

@@ -1,36 +1,24 @@
-# Release Notes / 发布说明 (v5.1.0)
+# Release Notes / 发布说明 (v5.2.0)
 
-## 用量插件
+## Anti-Power Usage 用量插件
+- 修复 Antigravity App 侧栏打开显示空白的问题; 窄侧栏中会话和请求明细按字段分行显示, 图表随宽度自适应
+- 当前会话指标栏显示最近一次模型请求的速度, 首字延迟和上下文占比, 展开可查看已用 token, 窗口上限和分类构成 (会话压缩后按保留内容和摘要计算)
+- Antigravity CLI 状态栏居中显示这三项指标, 两侧保留快捷键提示与模式, 模型, 推理档位; macOS 和 Linux 安装时自动为已有 CLI 配置 (已有其他配置或已关闭时需勾选替换, 卸载时自动还原)
 
-- 随附 **Anti-Power Usage**: 从标题栏弹窗安装, 升级, 卸载或更新价格表, 在 Antigravity App 的 **Customizations → Installed** 中启用; 卸载保留已记录用量
-- 后台自动采集本地请求, 可在侧边栏按日期, 模型, 来源或会话查看 token 用量, 缓存命中率和估算费用, 并展开查看每轮输入, 回复, 思考, 工具调用, 首字延迟和输出速度 (对话正文按需从本机库读取)
-- 同一会话的多个本地副本合并计量; 删除最后一份副本后, 已记录用量和费用并入匿名的 "已删除会话" (外部移走文件在确认缺失满 60 秒后归并)
-
-## 会话清理
-
-- 勾选 **CC Switch 同步记录** 时一并清理本地存储中已消失会话在 CC Switch 主库和备份中的残留同步进度 (保留用量和费用历史); 支持在 CC Switch 运行时清理, 退出后刷新即可完成复查
-- 删除会话后若窗口状态, 用量汇总, 缓存或同步记录未清理完, 重新打开 Anti-Power 或刷新列表会继续处理
-
-## 许可证
-
-- 自 v5.1.0 起采用 GPL-3.0-only; v5.0.1 及更早版本的 MIT 声明保留在 `LICENSE-MIT`, 插件上游来源见 `plugin/NOTICE.md`
+## 客户端版本与启动
+- 会话来源选择器显示本机检测到的 Antigravity App 和 Antigravity CLI 版本
+- macOS 用量插件弹窗新增 **启动 Antigravity 并启用挂载**: 退出 App 后以本机随机调试端口启动, 供桌面顶栏挂载使用 (侧栏和 CLI 状态栏无需此项)
 
 ---
 
-## Usage Plugin
+## Anti-Power Usage
+- Fix a blank side panel in the Antigravity App; narrow panels show session and request details as labeled fields, and charts resize with the panel
+- Show the latest request's speed, time to first token, and context utilization in the session strip; expand for used tokens, window limit, and category breakdown (accounting for retained content and summary after compaction)
+- Center the same three metrics in the Antigravity CLI footer between the shortcut hint and the active mode, model, and effort; on macOS and Linux, installing configures an existing CLI profile unless another or disabled status line is set (opt in to replace, restored on uninstall)
 
-- Bundle **Anti-Power Usage**: install, upgrade, uninstall, or update prices from the title bar dialog, then enable under **Customizations → Installed** in the Antigravity App; uninstalling preserves recorded usage
-- Collect local requests in the background and view token usage, cache hit rate, and estimated cost by date, model, source, or session; open a session to inspect each turn's prompt, reply, thinking, tool calls, time to first token, and output speed (content is read on demand from local stores)
-- Count multiple local copies of a session once, and fold recorded usage and cost into anonymous "Deleted sessions" totals after the last copy is deleted (or confirmed missing for 60 seconds)
-
-## Session Cleanup
-
-- **CC Switch sync records** also clears leftover sync cursors for sessions already gone from local stores across the main database and backups (preserving usage and cost history), and works while CC Switch is open (refresh after it exits to finish verification)
-- Reopening Anti-Power or refreshing the session list retries any unfinished window state, usage ledger, cache, or sync cleanup
-
-## License
-
-- Switch to GPL-3.0-only starting with v5.1.0; the MIT notice for v5.0.1 and earlier stays in `LICENSE-MIT`, and upstream plugin credits are in `plugin/NOTICE.md`
+## Client versions and launch options
+- Show detected Antigravity App and Antigravity CLI versions in the session source selector
+- Add **Launch Antigravity with debugging** on macOS: quit the app and launch with a random loopback debugging port for desktop overlays (the side panel and CLI status line work without it)
 
 ---
 
@@ -39,3 +27,7 @@
 - **Windows**: 下载 `anti-power-windows.exe` 安装运行 / Download and run `anti-power-windows.exe`
 - **macOS (Universal)**: 下载 `anti-power-macos-universal.dmg` 安装 (未签名, 首次打开若提示 "已损坏", 运行 `xattr -cr /Applications/Anti-Power.app`) / Download `anti-power-macos-universal.dmg` (unsigned; if macOS reports it is damaged, run `xattr -cr /Applications/Anti-Power.app`)
 - **Linux**: 下载 `anti-power-linux.AppImage` 运行 / Download and run `anti-power-linux.AppImage`
+
+从 v5.1.0 升级时, 安装新版 Anti-Power 后打开 **用量插件**, 点击 **更新到 v5.2.0**. 若 Antigravity App 正在运行, 重启后打开侧栏即可使用新版插件.
+
+If you have the v5.1.0 plugin installed, open the usage plugin dialog in the new Anti-Power and choose **Update to v5.2.0**. If the Antigravity App is running, restart it before opening the updated panel.

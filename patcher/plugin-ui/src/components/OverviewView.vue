@@ -123,7 +123,7 @@ const presets: Range[] = ["today", "last7", "last30", "all", "custom"];
 
       <div class="card">
         <h3 class="card-title">{{ t("bySession") }}</h3>
-        <table>
+        <table class="records">
           <thead>
             <tr>
               <th>{{ t("session") }}</th><th class="num">{{ t("requests") }}</th>
@@ -134,20 +134,20 @@ const presets: Range[] = ["today", "last7", "last30", "all", "custom"];
           <tbody>
             <tr v-for="s in summary.sessions" :key="s.id" class="clickable" tabindex="0"
               @click="emit('open', s.id)" @keydown.enter="emit('open', s.id)">
-              <td class="ellipsis title">{{ s.title || s.id }}</td>
-              <td class="num">{{ compact(s.totals.steps) }}</td>
-              <td class="num">{{ compact(s.totals.inputTokens) }}</td>
-              <td class="num">{{ compact(s.totals.cacheReadTokens) }}</td>
-              <td class="num">{{ compact(s.totals.outputTokens) }}</td>
-              <td class="num">{{ money(s.totals.cost) }}</td>
+              <td class="record-name ellipsis title">{{ s.title || s.id }}</td>
+              <td :data-label="t('requests')" class="num">{{ compact(s.totals.steps) }}</td>
+              <td :data-label="t('newInput')" class="num">{{ compact(s.totals.inputTokens) }}</td>
+              <td :data-label="t('cacheRead')" class="num">{{ compact(s.totals.cacheReadTokens) }}</td>
+              <td :data-label="t('output')" class="num">{{ compact(s.totals.outputTokens) }}</td>
+              <td :data-label="t('cost')" class="num">{{ money(s.totals.cost) }}</td>
             </tr>
             <tr v-if="summary.deleted.steps" class="deleted" :title="t('deletedHint')">
-              <td>{{ t("deletedSessions") }}</td>
-              <td class="num">{{ compact(summary.deleted.steps) }}</td>
-              <td class="num">{{ compact(summary.deleted.inputTokens) }}</td>
-              <td class="num">{{ compact(summary.deleted.cacheReadTokens) }}</td>
-              <td class="num">{{ compact(summary.deleted.outputTokens) }}</td>
-              <td class="num">{{ money(summary.deleted.cost) }}</td>
+              <td class="record-name">{{ t("deletedSessions") }}</td>
+              <td :data-label="t('requests')" class="num">{{ compact(summary.deleted.steps) }}</td>
+              <td :data-label="t('newInput')" class="num">{{ compact(summary.deleted.inputTokens) }}</td>
+              <td :data-label="t('cacheRead')" class="num">{{ compact(summary.deleted.cacheReadTokens) }}</td>
+              <td :data-label="t('output')" class="num">{{ compact(summary.deleted.outputTokens) }}</td>
+              <td :data-label="t('cost')" class="num">{{ money(summary.deleted.cost) }}</td>
             </tr>
             <tr v-if="!summary.sessions.length && !summary.deleted.steps">
               <td colspan="6" class="muted">{{ t("noData") }}</td>
@@ -161,16 +161,16 @@ const presets: Range[] = ["today", "last7", "last30", "all", "custom"];
 
 <style scoped>
 .filters { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; margin-bottom: 10px; }
-.presets { display: flex; gap: 2px; padding: 2px; border-radius: 8px; background: var(--apu-wash); }
+.presets { display: flex; max-width: 100%; flex-wrap: wrap; gap: 2px; padding: 2px; border-radius: 8px; background: var(--apu-wash); }
 .presets button { border: none; background: transparent; }
 .presets button.on { background: var(--apu-surface); box-shadow: 0 0 0 1px var(--apu-line); font-weight: 600; }
-.tiles { display: grid; grid-template-columns: repeat(auto-fit, minmax(130px, 1fr)); gap: 8px; margin-bottom: 8px; }
+.tiles { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 130px), 1fr)); gap: 8px; margin-bottom: 8px; }
 .tile .value { font-size: 20px; font-weight: 600; }
 .tile .sub { font-size: 12px; }
 .note { margin: 0 0 8px; font-size: 12px; }
 .card + .card, .grid2, .grid2 + .card, .tiles + .card, .note + .card { margin-top: 10px; }
-.grid2 { display: grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); gap: 10px; }
+.grid2 { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 280px), 1fr)); gap: 10px; }
 .grid2 .card, .tiles .card { margin-top: 0; }
-.title { max-width: 360px; }
+.title { max-width: 34ch; }
 tr.deleted td { color: var(--apu-text-2); font-style: italic; }
 </style>

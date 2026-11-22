@@ -18,7 +18,10 @@ export default defineConfig({
     cssCodeSplit: false,
     modulePreload: false,
     rolldownOptions: {
+      // The sidecar page loads a classic script inside Antigravity's plugin view
+      input: fileURLToPath(new URL("./plugin-ui/src/main.ts", import.meta.url)),
       output: {
+        format: "iife",
         entryFileNames: "app.js",
         assetFileNames: "app[extname]",
         codeSplitting: false,

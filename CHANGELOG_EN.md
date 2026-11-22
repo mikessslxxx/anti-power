@@ -4,6 +4,19 @@
 
 ---
 
+## v5.2.0 (2026-11-22)
+
+### Anti-Power Usage
+- Fix a blank side panel in the Antigravity App; narrow panels show session and request details as labeled fields, and charts resize with the panel
+- Show the latest request's speed, time to first token, and context utilization in the session strip; expand for used tokens, window limit, and category breakdown (accounting for retained content and summary after compaction)
+- Center the same three metrics in the Antigravity CLI footer between the shortcut hint and the active mode, model, and effort; on macOS and Linux, installing configures an existing CLI profile unless another or disabled status line is set (opt in to replace, restored on uninstall)
+
+### Client versions and launch options
+- Show detected Antigravity App and Antigravity CLI versions in the session source selector
+- Add **Launch Antigravity with debugging** on macOS: quit the app and launch with a random loopback debugging port for desktop overlays (the side panel and CLI status line work without it)
+
+---
+
 ## v5.1.0 (2026-11-22)
 
 ### Usage Plugin

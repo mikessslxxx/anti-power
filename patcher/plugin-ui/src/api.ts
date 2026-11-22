@@ -3,7 +3,7 @@ import type { Detail, SessionSummary, Status, Summary } from "./types";
 
 declare global {
   interface Window {
-    sidecar?: { fetch: typeof fetch };
+    sidecar?: { fetch: typeof fetch; conversationId?: string };
   }
 }
 
@@ -21,7 +21,7 @@ async function call<T>(path: string, body: object = {}): Promise<T> {
 }
 
 export const api = {
-  status: () => call<Status>("/api/status"),
+  status: (id?: string) => call<Status>("/api/status", { id }),
   sessions: () => call<{ sessions: SessionSummary[] }>("/api/sessions"),
   session: (id: string) => call<Detail | { error: string }>("/api/session", { id }),
   summary: (from?: string, to?: string) => call<Summary>("/api/summary", { from, to }),

@@ -3,6 +3,10 @@ export const locale = navigator.language || "en-US";
 const zh = locale.toLowerCase().startsWith("zh");
 
 const strings = {
+  currentSession: ["当前会话", "Current session"],
+  latestSpeed: ["最近请求速度", "Latest request speed"],
+  latestTtft: ["最近请求首字延迟", "Latest time to first token"],
+  contextUsage: ["上下文占用", "Context usage"],
   overview: ["概览", "Overview"],
   sessions: ["会话", "Sessions"],
   refresh: ["刷新", "Refresh"],

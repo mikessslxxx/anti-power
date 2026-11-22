@@ -5,9 +5,9 @@
 <h1 align="center">Anti-Power</h1>
 
 <p align="center">
-  <a href="https://github.com/mikessslxxx/anti-power/releases"><img src="https://img.shields.io/badge/版本-v5.1.0-blue.svg" alt="版本"></a>
-  <img src="https://img.shields.io/badge/Antigravity_App-2.33.0-green.svg" alt="Antigravity App">
-  <img src="https://img.shields.io/badge/Antigravity_CLI-1.5.12-green.svg" alt="Antigravity CLI">
+  <a href="https://github.com/mikessslxxx/anti-power/releases"><img src="https://img.shields.io/badge/版本-v5.2.0-blue.svg" alt="版本"></a>
+  <img src="https://img.shields.io/badge/Antigravity_App-2.34.0-green.svg" alt="Antigravity App">
+  <img src="https://img.shields.io/badge/Antigravity_CLI-1.5.14-green.svg" alt="Antigravity CLI">
 </p>
 
 <p align="center">
@@ -19,11 +19,11 @@
 ## 功能
 
 - 列出 Antigravity App (`~/.gemini/antigravity`) 和 Antigravity CLI (`~/.gemini/antigravity-cli`) 的会话, 也识别 CC Switch 的 `~/.cc-switch/agy/<profile>/antigravity-cli`
-- 按标题, 项目或会话 ID 搜索, 按来源筛选并查看消息
+- 按标题, 项目或会话 ID 搜索, 按来源 (显示检测到的客户端版本) 筛选并查看消息
 - 单条或批量删除, 逐条显示结果
 - 标出只剩索引的残留记录 (其他工具删掉会话文件后留下的), 可照常删除
 
-已在 macOS 上用 Antigravity App 2.33.0 和 Antigravity CLI 1.5.12 核对. Windows 和 Linux 安装包尚未实测. 不支持 Antigravity IDE (`~/.gemini/antigravity-ide`).
+已在 macOS 上用 Antigravity App 2.34.0 和 Antigravity CLI 1.5.14 核对. Windows 和 Linux 安装包尚未实测. 不支持 Antigravity IDE (`~/.gemini/antigravity-ide`).
 
 ## 清理范围
 
@@ -71,6 +71,10 @@ Anti-Power 附带 Antigravity 插件 **Anti-Power Usage**, 记录每次模型请
 - 按今天, 7 天, 30 天或自定义区间汇总, 按日期, 模型, 来源和会话拆分
 
 点击标题栏的用量插件按钮即可安装, 更新或卸载, 然后在 Antigravity App 的 **Customizations → Installed** 中开启, 从侧边栏打开. 插件进程启动时及之后每 10 秒采集一次, 关闭面板期间也会采集. 插件只读本地会话库, 不调用 Language Server, 也不上传数据; 对话内容在打开会话时现读, 不另存.
+
+侧栏顶部显示当前会话的请求速度, 首字延迟和上下文占比. 展开可查看已用 token, 窗口上限和用量构成. Antigravity CLI 状态栏也可独立显示这三项指标, 例如 `48.8 t/s | 4.4s | ◎ 19%`.
+
+macOS 和 Linux 安装插件时会为已有 CLI 配置状态栏 (已有其他配置或已关闭时可勾选替换, 卸载时还原). macOS 如需桌面顶栏挂载, 退出 App 后在插件弹窗点击 **启动 Antigravity 并启用挂载**.
 
 会话的所有本地副本删除后, 已记录用量会并入匿名的 "已删除会话" (外部移走文件约 60 秒后确认归并). 价格表来自 [antigravity-usage-monitor](https://github.com/yuhuan-dev/antigravity-usage-monitor), 可在 Anti-Power 的插件弹窗中更新; 需要配额监控可改用该插件.
 

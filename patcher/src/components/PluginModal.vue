@@ -31,6 +31,15 @@
           {{ $t('pluginModal.enable') }}
         </p>
 
+        <div v-if="status?.macosLauncher" class="launch-option">
+          <button class="about-btn" :disabled="busy" @click="launch">{{ $t('pluginModal.launch') }}</button>
+          <p class="plugin-note">{{ $t('pluginModal.launchHint') }}</p>
+        </div>
+
+        <label v-if="canInstall && status?.cliOptIn" class="cli-choice">
+          <input v-model="replaceCli" type="checkbox" :disabled="busy">
+          {{ $t('pluginModal.replaceCli') }}
+        </label>
         <div class="plugin-actions">
           <button class="primary-btn" :disabled="busy || !canInstall" @click="install">{{ installLabel }}</button>
           <template v-if="status?.installedVersion">
@@ -66,6 +75,8 @@ interface PluginStatus {
   installedCatalog: string | null;
   downloadedCatalog: string | null;
   antigravityRunning: boolean;
+  macosLauncher: boolean;
+  cliOptIn: boolean;
 }
 
 // Prices are maintained upstream by antigravity-usage-monitor
@@ -80,6 +91,7 @@ const status = ref<PluginStatus | null>(null);
 const statusError = ref('');
 const loading = ref(false);
 const changing = ref(false);
+const replaceCli = ref(false);
 const busy = computed(() => loading.value || changing.value);
 const message = ref('');
 const messageIsError = ref(false);
@@ -148,14 +160,30 @@ watch(
   () => props.show,
   (show) => {
     if (!show) return;
+    replaceCli.value = false;
     report('');
     void refreshStatus();
   },
   { immediate: true }
 );
 
+async function launch() {
+  if (busy.value) return;
+  changing.value = true;
+  try {
+    const started = await invoke<boolean>('launch_antigravity');
+    report(t(started ? 'pluginModal.launched' : 'pluginModal.quitFirst'));
+  } catch (error) {
+    report(String(error), true);
+  } finally {
+    changing.value = false;
+  }
+}
+
 function install() {
-  return run(() => invoke<PluginStatus>('install_plugin'), t('pluginModal.installed_done'));
+  return run(() => invoke<PluginStatus>('install_plugin', {
+    replaceCli: Boolean(status.value?.cliOptIn && replaceCli.value),
+  }), t('pluginModal.installed_done'));
 }
 
 function uninstall() {
@@ -231,6 +259,8 @@ function updateCatalog() {
   background: rgba(255, 255, 255, 0.08);
 }
 
+.launch-option .plugin-note { margin: 5px 0 12px; }
+
 .modal-body {
   padding: 18px 20px 20px;
 }
@@ -278,6 +308,8 @@ function updateCatalog() {
 .plugin-error {
   color: var(--ag-error);
 }
+
+.cli-choice { display: flex; align-items: center; gap: 8px; margin-bottom: 10px; font-size: 12px; }
 
 .plugin-actions {
   display: flex;

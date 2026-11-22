@@ -5,8 +5,8 @@
 mod commands;
 
 use commands::{
-    delete_sessions, install_plugin, load_session_messages, plugin_status, scan_sessions,
-    uninstall_plugin, update_plugin_catalog,
+    client_versions, delete_sessions, install_plugin, launch_antigravity, load_session_messages,
+    plugin_status, scan_sessions, uninstall_plugin, update_plugin_catalog,
 };
 use tauri::Manager;
 
@@ -31,10 +31,12 @@ pub fn run() {
         .plugin(tauri_plugin_opener::init())
         .plugin(tauri_plugin_dialog::init())
         .invoke_handler(tauri::generate_handler![
+            client_versions,
             scan_sessions,
             load_session_messages,
             delete_sessions,
             plugin_status,
+            launch_antigravity,
             install_plugin,
             uninstall_plugin,
             update_plugin_catalog

@@ -10,6 +10,14 @@ including CC Switch profiles under `~/.cc-switch/agy/<profile>/antigravity-cli`:
 
 Anti-Power installs it into `~/.gemini/config/plugins/anti-power-usage`. Turn it on under Customizations → Installed, then open it from the side panel.
 
+## Session metrics
+
+The panel shows the selected conversation's latest model request speed, time to first token, and context utilization. Expand the strip to see used tokens, the reported window limit, and the available breakdown. The calculation includes output and accounts for context compaction. An unknown limit displays as `—`.
+
+On macOS and Linux, installing configures the status line for an existing agy profile (opt in to replace an existing or disabled setting; uninstalling restores it). For manual setup, set `statusLine.command` to `node "/absolute/path/to/anti-power-usage/sidecars/panel/lib/statusline.mjs"`. It centers speed, first-token latency, and context usage (preferring agy's native percentage) between the shortcut hint and the active mode, model, and effort, and runs without the desktop sidecar.
+
+On macOS, **Launch Antigravity with debugging** in Anti-Power's plugin manager cold-starts the app (after quitting it) with a random loopback debugging port for desktop overlays; panel and CLI metrics work without it.
+
 ## Data
 
 While running, the sidecar scans `conversations/<id>.db` (and its WAL) at startup and every 10 seconds, even with the panel closed; incomplete reads are reported in the panel and retried on the next scan.

@@ -11,7 +11,7 @@
         >
           <option value="">{{ $t('sessionViewer.filterAll') }}</option>
           <option v-for="provider in providerIds" :key="provider" :value="provider">
-            {{ $t('sessionViewer.providers.' + provider) }}
+            {{ sourceLabel(provider) }}
           </option>
         </select>
         <button class="sv-refresh-btn" :disabled="actionsBusy" @click="scanSessions">
@@ -262,7 +262,21 @@ function loadCleanOptions(): CleanOptions {
   return options;
 }
 
-const providerIds = ['antigravity', 'agy'];
+const providerIds = ['antigravity', 'agy'] as const;
+type Provider = typeof providerIds[number];
+const versions = ref<Partial<Record<Provider, string | null>>>({});
+function sourceLabel(provider: Provider) {
+  const name = t('sessionViewer.providers.' + provider);
+  const version = versions.value[provider];
+  return version ? `${name} · ${version}` : name;
+}
+
+let versionRequest = 0;
+async function refreshVersions() {
+  const request = ++versionRequest;
+  const next = await invoke<Record<Provider, string | null>>('client_versions').catch(() => ({}));
+  if (request === versionRequest) versions.value = next;
+}
 const sessions = ref<SessionMeta[]>([]);
 const messages = ref<SessionMessage[]>([]);
 const selectedSession = ref<SessionMeta | null>(null);
@@ -340,6 +354,7 @@ function errorMessage(error: unknown): string {
 async function scanSessions() {
   if (isScanning.value) return;
   isScanning.value = true;
+  void refreshVersions();
   scanError.value = '';
   try {
     const result = await invoke<{ sessions: SessionMeta[]; warnings: string[] }>('scan_sessions');

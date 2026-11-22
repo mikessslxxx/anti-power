@@ -14,6 +14,7 @@ Upstream revision: `f53f27927f225b4acd91a24208e88c892784b67c` (v1.5.2)
 | `sidecars/panel/vendor/usage-monitor/backend/model-pricing.mjs` | Copied unchanged |
 | `sidecars/panel/vendor/usage-monitor/backend/cli-sqlite-reader.mjs` | Trajectory and annotation readers only (omits summary-index cache); returns full text on demand and distinguishes empty trajectories from read errors |
 | `sidecars/panel/vendor/usage-monitor/backend/pricing-catalog.mjs` | Rewritten: keeps the catalog format and validation, drops cloud sync and plugin updates |
+| `sidecars/panel/vendor/usage-monitor/session-context.mjs` | Current context and compaction calculations from `telemetry-builder.mjs` and `telemetry-display-rules.mjs`, using reported window limits |
 | `pricing-catalog.json` | Pricing and model placeholder data, without the upstream release links |
 
 To pick up upstream fixes, diff the copied files against the same paths in the upstream repository.

@@ -70,7 +70,7 @@ const rows = computed(() => {
     <input v-model="query" type="search" class="search" :placeholder="t('search')" :aria-label="t('search')" />
     <div v-if="error" class="notice critical" role="alert">{{ t("loadFailed", { error }) }}</div>
     <div class="card">
-      <table>
+      <table class="records">
         <thead>
           <tr>
             <th>{{ t("session") }}</th><th>{{ t("lastActive") }}</th>
@@ -81,15 +81,15 @@ const rows = computed(() => {
         <tbody>
           <tr v-for="{ session: s, depth } in rows" :key="s.id" class="clickable" tabindex="0"
             @click="emit('open', s.id)" @keydown.enter="emit('open', s.id)">
-            <td class="name" :style="{ paddingLeft: `${6 + depth * 16}px` }">
+            <td class="record-name name" :style="{ paddingLeft: `${6 + Math.min(depth, 4) * 12}px` }">
               <div class="ellipsis">{{ s.title || s.id }}</div>
               <div class="muted meta ellipsis">{{ t(s.client) }} · {{ s.models.join(", ") }}</div>
             </td>
-            <td class="secondary">{{ dateTime(s.lastActiveMs) }}</td>
-            <td class="num">{{ compact(s.totals.steps) }}</td>
-            <td class="num">{{ percent(cacheHit(s.totals)) }}</td>
-            <td class="num">{{ compact(s.totals.outputTokens) }}</td>
-            <td class="num">{{ money(s.totals.cost) }}{{ s.totals.unpricedSteps ? " *" : "" }}</td>
+            <td :data-label="t('lastActive')" class="secondary">{{ dateTime(s.lastActiveMs) }}</td>
+            <td :data-label="t('requests')" class="num">{{ compact(s.totals.steps) }}</td>
+            <td :data-label="t('cacheHit')" class="num">{{ percent(cacheHit(s.totals)) }}</td>
+            <td :data-label="t('output')" class="num">{{ compact(s.totals.outputTokens) }}</td>
+            <td :data-label="t('cost')" class="num">{{ money(s.totals.cost) }}{{ s.totals.unpricedSteps ? " *" : "" }}</td>
           </tr>
           <tr v-if="!rows.length"><td colspan="6" class="muted">{{ t("noSessions") }}</td></tr>
         </tbody>

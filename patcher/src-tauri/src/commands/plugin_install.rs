@@ -43,6 +43,8 @@ pub struct PluginStatus {
     pub downloaded_catalog: Option<String>,
     /// Changes take effect after Antigravity restarts
     pub antigravity_running: bool,
+    pub macos_launcher: bool,
+    pub cli_opt_in: bool,
 }
 
 fn target(home: &Path) -> PathBuf {
@@ -111,6 +113,13 @@ fn status(home: &Path, bundled: &Path) -> PluginStatus {
         }),
         downloaded_catalog: manifest.and_then(|_| catalog(dir.join(DOWNLOADED_CATALOG))),
         antigravity_running: antigravity_running().unwrap_or(false),
+        macos_launcher: cfg!(target_os = "macos"),
+        cli_opt_in: cfg!(unix)
+            && checked_path(home, &Path::new(CLI_DIR).join("settings.json"))
+                .ok()
+                .flatten()
+                .and_then(|path| read_json(&path))
+                .is_some_and(|settings| cli_needs_opt_in(settings.get("statusLine"))),
     }
 }
 
@@ -228,7 +237,100 @@ fn install(home: &Path, bundled: &Path) -> Result<()> {
     recover_upgrade(home)
 }
 
-/// Remove the plugin folder; its usage history in Antigravity's sidecar data stays
+const CLI_DIR: &str = ".gemini/antigravity-cli";
+const CLI_BACKUP: &str = ".anti-power-statusline-backup.json";
+const CLI_COMMAND: &str =
+    r#"node "$HOME/.gemini/config/plugins/anti-power-usage/sidecars/panel/lib/statusline.mjs""#;
+
+fn write_json_file(path: &Path, value: &Value) -> Result<()> {
+    let mut temp = tempfile::NamedTempFile::new_in(path.parent().ok_or("Invalid JSON file path")?)?;
+    serde_json::to_writer_pretty(&mut temp, value)?;
+    temp.write_all(b"\n")?;
+    temp.as_file().sync_all()?;
+    temp.persist(path)?;
+    Ok(())
+}
+
+// Keep an existing provider or an explicit disabled setting unless the user opts in
+fn cli_needs_opt_in(line: Option<&Value>) -> bool {
+    let Some(value) = line.filter(|v| !v.is_null()) else {
+        return false;
+    };
+    if !value.is_object() || value["enabled"] == false {
+        return true;
+    }
+    let command = value["command"].as_str().unwrap_or("").trim();
+    (!command.is_empty() && command != CLI_COMMAND)
+        || value["type"].as_str().is_some_and(|kind| kind != "command")
+}
+
+fn configure_cli(home: &Path, replace: bool) -> Result<()> {
+    let dir = Path::new(CLI_DIR);
+    if !cfg!(unix) || checked_path(home, dir)?.is_none() {
+        return Ok(());
+    }
+    let relative = dir.join("settings.json");
+    let mut current: Value = match checked_path(home, &relative)? {
+        Some(path) => serde_json::from_slice(&fs::read(path)?)?,
+        None => serde_json::json!({}),
+    };
+    let settings = home.join(relative);
+    let obj = current.as_object_mut().ok_or("Invalid agy settings")?;
+    let previous = obj.get("statusLine").cloned();
+    if !replace && cli_needs_opt_in(previous.as_ref()) {
+        return Ok(());
+    }
+    if previous.as_ref().is_some_and(|v| {
+        v["command"].as_str() == Some(CLI_COMMAND) && v["enabled"].as_bool() != Some(false)
+    }) {
+        return Ok(());
+    }
+    let saved = serde_json::json!({ "command": CLI_COMMAND, "previous": previous, "hadStatusLine": previous.is_some() });
+    let backup = home.join(dir).join(CLI_BACKUP);
+    if checked_path(home, &dir.join(CLI_BACKUP))?.is_none()
+        || previous.as_ref().and_then(|v| v["command"].as_str()) != Some(CLI_COMMAND)
+    {
+        write_json_file(&backup, &saved)?;
+    }
+    let mut line = previous
+        .and_then(|v| v.as_object().cloned())
+        .unwrap_or_default();
+    line.insert("type".into(), "command".into());
+    line.insert("command".into(), CLI_COMMAND.into());
+    line.insert("enabled".into(), true.into());
+    line.entry("stack_with_default").or_insert(false.into());
+    obj.insert("statusLine".into(), line.into());
+    write_json_file(&settings, &current)
+}
+
+// Restore the previous provider only while the user still has our command
+fn restore_cli_statusline(home: &Path) -> Result<()> {
+    let dir = Path::new(CLI_DIR);
+    let Some(backup) = checked_path(home, &dir.join(CLI_BACKUP))? else {
+        return Ok(());
+    };
+    if let Some(settings) = checked_path(home, &dir.join("settings.json"))? {
+        let mut current: Value = serde_json::from_slice(&fs::read(&settings)?)?;
+        if current["statusLine"]["command"].as_str() == Some(CLI_COMMAND) {
+            let saved: Value = serde_json::from_slice(&fs::read(&backup)?)?;
+            if saved["command"].as_str() != Some(CLI_COMMAND) || saved.get("previous").is_none() {
+                return Err("Invalid Anti-Power CLI status line backup".into());
+            }
+            if !saved["hadStatusLine"]
+                .as_bool()
+                .unwrap_or(!saved["previous"].is_null())
+            {
+                current.as_object_mut().unwrap().remove("statusLine");
+            } else {
+                current["statusLine"] = saved["previous"].clone();
+            }
+            write_json_file(&settings, &current)?;
+        }
+    }
+    fs::remove_file(backup)?;
+    Ok(())
+}
+
 fn uninstall(home: &Path) -> Result<()> {
     recover_upgrade(home)?;
     if installed(home)?.is_none() {
@@ -238,6 +340,7 @@ fn uninstall(home: &Path) -> Result<()> {
     let old = tempfile::Builder::new()
         .prefix(".anti-power-usage-old-")
         .tempdir_in(&plugins)?;
+    restore_cli_statusline(home)?;
     fs::rename(target(home), old.path().join(PLUGIN))?;
     Ok(())
 }
@@ -366,8 +469,17 @@ fn change_plugin(
 }
 
 #[tauri::command(async)]
-pub fn install_plugin(app: AppHandle) -> std::result::Result<PluginStatus, String> {
-    change_plugin(&app, install)
+pub fn install_plugin(
+    app: AppHandle,
+    replace_cli: Option<bool>,
+) -> std::result::Result<PluginStatus, String> {
+    change_plugin(&app, |home, bundled| {
+        install(home, bundled)?;
+        configure_cli(home, replace_cli.unwrap_or(false)).map_err(|e| {
+            format!("Anti-Power Usage is installed. Could not configure the agy status line: {e}")
+                .into()
+        })
+    })
 }
 
 #[tauri::command(async)]
@@ -381,6 +493,40 @@ pub fn update_plugin_catalog(
     catalog: String,
 ) -> std::result::Result<PluginStatus, String> {
     change_plugin(&app, |home, _| update_catalog(home, &catalog))
+}
+
+/// Launch Services only passes Chromium flags to a cold application
+#[tauri::command(async)]
+pub fn launch_antigravity() -> std::result::Result<bool, String> {
+    #[cfg(target_os = "macos")]
+    {
+        use std::process::Command;
+        let running = Command::new("/usr/bin/pgrep")
+            .args(["-x", "Antigravity"])
+            .output()
+            .map_err(|e| e.to_string())?;
+        match running.status.code() {
+            Some(0) => return Ok(false),
+            Some(1) => {}
+            _ => return Err("Could not check whether Antigravity is running".into()),
+        }
+        let launch = Command::new("/usr/bin/open")
+            .args([
+                "-b",
+                "com.google.antigravity",
+                "--args",
+                "--remote-debugging-address=127.0.0.1",
+                "--remote-debugging-port=0",
+            ])
+            .output()
+            .map_err(|e| e.to_string())?;
+        if !launch.status.success() {
+            return Err(String::from_utf8_lossy(&launch.stderr).trim().to_owned());
+        }
+        Ok(true)
+    }
+    #[cfg(not(target_os = "macos"))]
+    Err("This launcher requires macOS".into())
 }
 
 #[cfg(test)]
@@ -403,6 +549,52 @@ mod tests {
         )
         .unwrap();
         dir
+    }
+
+    #[test]
+    fn only_configured_or_disabled_status_lines_need_a_choice() {
+        assert!(!cli_needs_opt_in(None));
+        assert!(!cli_needs_opt_in(Some(&json!({"padding": 2}))));
+        assert!(!cli_needs_opt_in(Some(&json!({"command": CLI_COMMAND}))));
+        assert!(cli_needs_opt_in(Some(&json!({"enabled": false}))));
+        assert!(cli_needs_opt_in(Some(&json!({"command": "custom"}))));
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn cli_provider_is_idempotent_and_restores_only_our_command() {
+        let temp = tempfile::tempdir().unwrap();
+        let home = temp.path();
+        let bundled = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../plugin");
+        install(home, &bundled).unwrap();
+        let dir = home.join(CLI_DIR);
+        fs::create_dir_all(&dir).unwrap();
+        let settings = dir.join("settings.json");
+        let original = json!({"keep": true, "statusLine": {"command": "previous", "padding": 3}});
+        configure_cli(home, false).unwrap();
+        assert_eq!(
+            read_json(&settings).unwrap()["statusLine"]["command"],
+            CLI_COMMAND
+        );
+        restore_cli_statusline(home).unwrap();
+        assert!(read_json(&settings).unwrap().get("statusLine").is_none());
+        write_json_file(&settings, &original).unwrap();
+        configure_cli(home, false).unwrap();
+        assert_eq!(read_json(&settings).unwrap(), original);
+        assert!(!dir.join(CLI_BACKUP).exists());
+        configure_cli(home, true).unwrap();
+        configure_cli(home, true).unwrap();
+        assert_eq!(
+            read_json(&settings).unwrap()["statusLine"]["command"],
+            CLI_COMMAND
+        );
+        restore_cli_statusline(home).unwrap();
+        assert_eq!(read_json(&settings).unwrap(), original);
+        configure_cli(home, true).unwrap();
+        let changed = json!({"keep": false, "statusLine": {"command":"my new command"}});
+        write_json_file(&settings, &changed).unwrap();
+        uninstall(home).unwrap();
+        assert_eq!(read_json(&settings).unwrap(), changed);
     }
 
     #[test]

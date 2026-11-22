@@ -86,7 +86,7 @@ const stats = computed(() => {
         </div>
         <div class="prompt">{{ turn.prompt || t("noPrompt") }}</div>
 
-        <table v-if="turn.requests.length">
+        <table v-if="turn.requests.length" class="records">
           <thead>
             <tr>
               <th>{{ t("time") }}</th><th>{{ t("model") }}</th>
@@ -100,21 +100,21 @@ const stats = computed(() => {
             <template v-for="r in turn.requests" :key="r.stepIndex">
               <tr class="clickable" tabindex="0" :aria-expanded="open.has(r.stepIndex)"
                 @click="toggle(r)" @keydown.enter="toggle(r)">
-                <td class="secondary">{{ dateTime(r.createdAtMs) }}</td>
-                <td class="ellipsis model">
+                <td :data-label="t('time')" class="secondary">{{ dateTime(r.createdAtMs) }}</td>
+                <td class="record-name ellipsis model">
                   {{ r.model.label }}
                   <span v-if="r.isCompactionStep" class="tag">{{ t("compaction") }}</span>
                 </td>
-                <td class="num">{{ compact(r.inputTokens) }}</td>
-                <td class="num">{{ compact(r.cacheReadTokens) }}</td>
-                <td class="num" :title="`${t('thinking')} ${compact(r.thinkingTokens)}`">{{ compact(r.outputTokens) }}</td>
-                <td class="num">{{ seconds(r.ttftSec) }}</td>
-                <td class="num">{{ seconds(r.totalDurationSec) }}</td>
+                <td :data-label="t('newInput')" class="num">{{ compact(r.inputTokens) }}</td>
+                <td :data-label="t('cacheRead')" class="num">{{ compact(r.cacheReadTokens) }}</td>
+                <td :data-label="t('output')" class="num" :title="`${t('thinking')} ${compact(r.thinkingTokens)}`">{{ compact(r.outputTokens) }}</td>
+                <td :data-label="t('ttft')" class="num">{{ seconds(r.ttftSec) }}</td>
+                <td :data-label="t('duration')" class="num">{{ seconds(r.totalDurationSec) }}</td>
                 <!-- Speeds left out of the average are shown muted -->
-                <td class="num" :class="{ muted: !r.speedSampleEligible }" :title="r.speedReason || ''">
+                <td :data-label="t('speed')" class="num" :class="{ muted: !r.speedSampleEligible }" :title="r.speedReason || ''">
                   {{ rate(r.totalTokPerSec) }}
                 </td>
-                <td class="num">{{ r.cost === null ? t("unpriced") : money(r.cost) }}</td>
+                <td :data-label="t('cost')" class="num">{{ r.cost === null ? t("unpriced") : money(r.cost) }}</td>
               </tr>
               <tr v-if="open.has(r.stepIndex)" class="expanded">
                 <td colspan="9">
@@ -160,8 +160,9 @@ const stats = computed(() => {
 
 <style scoped>
 .top { display: flex; align-items: center; gap: 10px; }
-h2 { font-size: 15px; margin: 0; }
-.meta { margin: 4px 0 8px; font-size: 12px; }
+.top button { flex: none; }
+h2 { min-width: 0; font-size: 15px; margin: 0; }
+.meta { overflow-wrap: anywhere; margin: 4px 0 8px; font-size: 12px; }
 .stats { display: flex; flex-wrap: wrap; gap: 6px 18px; margin-bottom: 8px; }
 .stat { display: flex; flex-direction: column; }
 .stat strong { font-size: 16px; }

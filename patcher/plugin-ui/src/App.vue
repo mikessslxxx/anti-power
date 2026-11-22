@@ -1,8 +1,9 @@
 <script setup lang="ts">
-import { onBeforeUnmount, onMounted, ref } from "vue";
+import { computed, onBeforeUnmount, onMounted, ref, watch } from "vue";
 import { api } from "./api";
 import { t } from "./i18n";
 import type { Status } from "./types";
+import SessionStrip from "./components/SessionStrip.vue";
 import OverviewView from "./components/OverviewView.vue";
 import SessionsView from "./components/SessionsView.vue";
 import SessionDetail from "./components/SessionDetail.vue";
@@ -15,14 +16,23 @@ const statusError = ref("");
 // Bumped to make every view refetch
 const tick = ref(0);
 
+const hostSession = window.sidecar?.conversationId || new URLSearchParams(location.search).get("conversationId");
+const scope = computed(() => openSession.value || hostSession || undefined);
+let generation = 0;
 async function loadStatus() {
+  const current = ++generation;
   try {
-    status.value = await api.status();
+    const result = await api.status(scope.value);
+    if (current !== generation) return;
+    status.value = result;
     statusError.value = "";
   } catch (error) {
+    if (current !== generation) return;
     statusError.value = String((error as Error).message || error);
   }
 }
+
+watch(scope, () => { status.value = null; void loadStatus(); });
 
 function refresh() {
   tick.value++;
@@ -80,6 +90,9 @@ function show(next: Tab) {
       <button @click="refresh">{{ t("refresh") }}</button>
     </header>
 
+    <SessionStrip v-if="scope && status?.metrics" :key="scope" :metrics="status.metrics"
+      :label="openSession ? t('session') : t('currentSession')" />
+
     <div v-if="status && !status.sqlite" class="notice critical" role="alert">{{ t("noSqlite") }}</div>
     <div v-if="status?.error" class="notice critical" role="alert">{{ status.error }}</div>
     <div v-if="status?.partial" class="notice" role="status">{{ t("partialScan", status.partial) }}</div>
@@ -96,9 +109,10 @@ function show(next: Tab) {
 
 <style scoped>
 .shell { padding: 10px 12px 24px; max-width: 1200px; margin: 0 auto; }
-.bar { display: flex; align-items: center; gap: 8px; margin-bottom: 10px; }
+.bar { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; margin-bottom: 10px; }
 .tabs { display: flex; gap: 2px; padding: 2px; border-radius: 8px; background: var(--apu-wash); }
 .tabs button { border: none; background: transparent; }
 .tabs button.active { background: var(--apu-surface); box-shadow: 0 0 0 1px var(--apu-line); font-weight: 600; }
+.tabs { flex-wrap: wrap; }
 .catalog { margin-left: auto; font-size: 12px; }
 </style>

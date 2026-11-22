@@ -86,7 +86,14 @@ export interface Detail {
   ttft: { avgSec: number | null; sampleCount: number };
 }
 
+export interface SessionMetrics {
+  speed: number | null;
+  ttft: number | null;
+  context: { used: number | null; limit: number | null; breakdown: Record<string, number> | null };
+}
+
 export interface Status {
+  metrics: SessionMetrics | null;
   partial: { stores: number; sessions: number } | null;
   rebuilt: boolean;
   sqlite: boolean;

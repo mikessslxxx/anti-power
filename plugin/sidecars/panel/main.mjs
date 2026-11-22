@@ -53,7 +53,7 @@ const json = (value) => new Response(JSON.stringify(value), {
   contentType: 'application/json; charset=utf-8',
   headers: NO_STORE,
 });
-app.api('/api/status', () => json(index.status()), 'POST');
+app.api('/api/status', (data) => json(index.status(data)), 'POST');
 app.api('/api/sessions', () => json(index.listSessions()), 'POST');
 app.api('/api/session', (data) => json(index.session(data)), 'POST');
 app.api('/api/summary', (data) => json(index.summary(data)), 'POST');

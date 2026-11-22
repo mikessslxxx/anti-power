@@ -6,6 +6,8 @@ import { addTotals, emptyTotals, emptyLedger, foldSession, loadLedger, removeLed
 import { listSessionFiles, listStores, regularFile } from './stores.mjs';
 import { ACCOUNTING_VERSION, ledgerEntry, readCopies, sessionDetail } from './usage.mjs';
 
+import { sessionMetrics } from './metrics.mjs';
+
 const DAY = /^\d{4}-\d{2}-\d{2}$/;
 
 // External removals require a second complete observation after the grace period
@@ -46,6 +48,7 @@ export class UsageIndex {
   #minIntervalMs;
   #ledger;
   #files = new Map();
+  #lastMetrics;
   #lastScanMs = 0;
   #lastError = '';
   #partial = null;
@@ -219,9 +222,25 @@ export class UsageIndex {
     }
   }
 
-  status() {
+  #metricsFor(id) {
+    const copies = this.#files.get(id);
+    if (!copies) return null;
+    const signature = JSON.stringify(copies.map(({ store, file }) => [store.key, file.sig]));
+    if (this.#lastMetrics?.id === id && this.#lastMetrics.signature === signature) {
+      return this.#lastMetrics.metrics;
+    }
+    let partial = false;
+    const batch = readCopies(copies, false, () => { partial = true; });
+    if (!batch) return null;
+    const metrics = sessionMetrics(batch.data.rows);
+    if (!partial) this.#lastMetrics = { id, signature, metrics };
+    return metrics;
+  }
+
+  status({ id } = {}) {
     this.refresh();
     return {
+      metrics: this.#metricsFor(id),
       sqlite: hasBuiltinNodeSqlite(),
       catalog: { version: catalogInfo.version, updatedAt: catalogInfo.updatedAt },
       sessions: Object.values(this.#ledger.sessions).filter((s) => s.missingSince === undefined).length,

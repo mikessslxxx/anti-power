@@ -16,7 +16,8 @@ Anti-Power ships Anti-Power Usage for local per-request usage and cost. Quota tr
   - `antigravity_clean.rs`: session cleanup
   - `cleanup_extras.rs`: Antigravity App window state and caches, CC Switch sync records, and usage ledger cleanup
   - `usage_ledger.rs`: folding removed sessions into Anti-Power Usage's deleted totals
-  - `plugin_install.rs`: plugin install, uninstall, and price catalog updates
+  - `client_versions.rs`: installed App and CLI versions for the session source selector
+  - `plugin_install.rs`: plugin installation, CLI status line setup and restoration, price updates, and the macOS launcher
   - `sessions.rs`: session Tauri commands (`scan_sessions`, `load_session_messages`, `delete_sessions`)
 - `patcher/src/`: Vue frontend; `components/SessionViewer.vue` is the main view
 - `plugin/`: Anti-Power Usage sidecar and bundled catalog. `patcher/plugin-ui/` holds the Vue panel source.
@@ -32,7 +33,7 @@ Anti-Power ships Anti-Power Usage for local per-request usage and cost. Quota tr
 
 A session is identified by its source and UUID. Under each root, a session can appear in `conversations/`, `brain/`, `annotations/`, `presence/`, `conversation_summaries.db` (summaries, FTS, parents), the summary index, `cache/last_conversations.json`, `cache/conversation_metadata.json`, `history.jsonl` (the Antigravity CLI prompt history), and plugin `sidecar_data/`. Outside the stores, the Antigravity App keeps window state in `app_storage.json`, and CC Switch keeps sync progress in `~/.cc-switch/cc-switch.db` and its backups. The README lists what cleanup removes and what it leaves.
 
-Last checked on macOS against Antigravity App 2.33.0 and Antigravity CLI 1.5.12. Antigravity IDE (`~/.gemini/antigravity-ide`) is out of scope.
+Last checked on macOS against Antigravity App 2.34.0 and Antigravity CLI 1.5.14. Antigravity IDE (`~/.gemini/antigravity-ide`) is out of scope.
 
 ## Cleanup rules
 

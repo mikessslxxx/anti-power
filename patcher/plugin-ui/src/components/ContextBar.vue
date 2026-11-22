@@ -63,16 +63,16 @@ const budget = computed(() => {
 
 <style scoped>
 .ctx { margin: 6px 0 10px; }
-.head { display: flex; justify-content: space-between; font-size: 12px; margin-bottom: 4px; }
+.head { display: flex; flex-wrap: wrap; gap: 3px 8px; justify-content: space-between; font-size: 12px; margin-bottom: 4px; }
 .bar {
   display: flex;
-  gap: 2px;
+  gap: 0;
   height: 8px;
   border-radius: 4px;
   overflow: hidden;
   background: var(--apu-wash);
 }
-.part { display: block; min-width: 2px; border-radius: 4px; outline-offset: 2px; }
+.part { display: block; min-width: 0; border-radius: 4px; outline-offset: 2px; }
 .part:hover { filter: brightness(1.12); }
 .legend { list-style: none; display: flex; flex-wrap: wrap; gap: 4px 14px; padding: 0; margin: 6px 0 0; font-size: 12px; }
 .legend li { display: flex; align-items: center; gap: 4px; }

@@ -4,9 +4,10 @@ version = 4
 
 [[package]]
 name = "Anti-Power"
-version = "5.1.0"
+version = "5.2.0"
 dependencies = [
  "rusqlite",
+ "semver",
  "serde",
  "serde_json",
  "sysinfo",
@@ -15,6 +16,7 @@ dependencies = [
  "tauri-plugin-dialog",
  "tauri-plugin-opener",
  "tempfile",
+ "tokio",
 ]
 
 [[package]]
@@ -4109,6 +4111,7 @@ dependencies = [
  "libc",
  "mio",
  "pin-project-lite",
+ "signal-hook-registry",
  "socket2",
  "windows-sys 0.61.2",
 ]
