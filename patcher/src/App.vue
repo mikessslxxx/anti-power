@@ -3,17 +3,19 @@ import { ref } from "vue";
 import { version } from "../package.json";
 import TitleBar from "./components/TitleBar.vue";
 import AboutModal from "./components/AboutModal.vue";
+import PluginModal from "./components/PluginModal.vue";
 import SessionViewer from "./components/SessionViewer.vue";
 import FlowBackground from "./components/FlowBackground.vue";
 
 const GITHUB_URL = "https://github.com/mikessslxxx/anti-power";
 const showAbout = ref(false);
+const showPlugin = ref(false);
 </script>
 
 <template>
   <div class="app-wrapper">
     <FlowBackground />
-    <TitleBar :title="$t('app.title')" @openAbout="showAbout = true" />
+    <TitleBar :title="$t('app.title')" @openAbout="showAbout = true" @openPlugin="showPlugin = true" />
 
     <main class="app-container">
       <SessionViewer />
@@ -25,6 +27,7 @@ const showAbout = ref(false);
       :githubUrl="GITHUB_URL"
       @close="showAbout = false"
     />
+    <PluginModal :show="showPlugin" @close="showPlugin = false" />
   </div>
 </template>
 

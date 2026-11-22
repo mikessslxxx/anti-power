@@ -25,6 +25,13 @@
           <line x1="18.36" y1="5.64" x2="19.78" y2="4.22"></line>
         </svg>
       </button>
+      <button class="titlebar-btn plugin-btn" @click="$emit('openPlugin')" :title="$t('pluginModal.title')">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+          <path d="M4 20V10"></path>
+          <path d="M12 20V4"></path>
+          <path d="M20 20v-7"></path>
+        </svg>
+      </button>
       <button class="titlebar-btn about-btn" @click="$emit('openAbout')" :title="$t('titleBar.about')">
         <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
           <circle cx="12" cy="12" r="10"></circle>
@@ -75,7 +82,7 @@ defineProps<{
   title?: string;
 }>();
 
-defineEmits(['openAbout']);
+defineEmits(['openAbout', 'openPlugin']);
 
 const isMaximized = ref(false);
 const isDark = ref(true);

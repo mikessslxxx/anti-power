@@ -1,10 +1,10 @@
 {
   "$schema": "https://schema.tauri.app/config/2",
   "productName": "Anti-Power",
-  "version": "5.0.1",
+  "version": "5.1.0",
   "identifier": "com.daoif.anti-power",
   "build": {
-    "beforeDevCommand": "npm run dev",
+    "beforeDevCommand": "npm run build:plugin && npm run dev",
     "devUrl": "http://localhost:5173",
     "beforeBuildCommand": "npm run build",
     "frontendDist": "../dist"
@@ -33,6 +33,21 @@
       "icons/128x128@2x.png",
       "icons/icon.icns",
       "icons/icon.ico"
-    ]
+    ],
+    "resources": {
+      "../../LICENSE": "plugin/LICENSE",
+      "../../LICENSE-MIT": "plugin/LICENSE-MIT",
+      "../../plugin/plugin.json": "plugin/plugin.json",
+      "../../plugin/README.md": "plugin/README.md",
+      "../../plugin/NOTICE.md": "plugin/NOTICE.md",
+      "../../plugin/pricing-catalog.json": "plugin/pricing-catalog.json",
+      "../../plugin/assets/": "plugin/assets/",
+      "../../plugin/sidecars/panel/sidecar.json": "plugin/sidecars/panel/sidecar.json",
+      "../../plugin/sidecars/panel/package.json": "plugin/sidecars/panel/package.json",
+      "../../plugin/sidecars/panel/main.mjs": "plugin/sidecars/panel/main.mjs",
+      "../../plugin/sidecars/panel/lib/": "plugin/sidecars/panel/lib/",
+      "../../plugin/sidecars/panel/vendor/": "plugin/sidecars/panel/vendor/",
+      "../../plugin/sidecars/panel/web/": "plugin/sidecars/panel/web/"
+    }
   }
 }

@@ -1,11 +1,11 @@
-use super::antigravity_clean::{index_name, indexed_ids};
+use super::antigravity_clean::{index_name, indexed_ids, HISTORY, RECENTS, STAGE_PREFIX};
 use super::antigravity_store::{
-    checked_path, locate, roots, valid_id, DESKTOP, INDEX_DB, METADATA,
+    checked_file, checked_path, locate, roots, valid_id, DESKTOP, INDEX_DB, METADATA,
 };
 use super::sessions::{SessionMessage, SessionMeta};
 use rusqlite::{types::ValueRef, Connection, OpenFlags, Row};
 use serde_json::Value;
-use std::collections::{BTreeMap, HashMap, HashSet};
+use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet};
 use std::fs::{self, File, Metadata};
 use std::io::{self, BufRead, BufReader, Read};
 use std::path::{Path, PathBuf};
@@ -41,8 +41,10 @@ pub(super) fn scan(home: &Path, provider_id: &str) -> Result<Vec<SessionMeta>, S
         }
         read_metadata(&root, &mut candidates);
         if let Ok(Some(path)) = checked_path(&root, Path::new(index_name(provider_id))) {
-            for id in indexed_ids(&fs::read(path).unwrap_or_default(), provider_id == DESKTOP) {
-                candidates.entry(id).or_default();
+            if let Ok(bytes) = fs::read(path) {
+                for id in indexed_ids(&bytes, provider_id == DESKTOP, false).unwrap_or_default() {
+                    candidates.entry(id).or_default();
+                }
             }
         }
         collect_files(&root, &mut candidates);
@@ -100,6 +102,104 @@ pub(super) fn load_messages(
         }
     })();
     result.map_err(|error| error.to_string())
+}
+
+/// IDs with any trace in a store, including nested agent runs that the list hides
+pub(super) fn live_ids(
+    home: &Path,
+    root: &Path,
+    provider_id: &str,
+    selected: Option<&BTreeSet<String>>,
+) -> Result<HashSet<String>, Box<dyn std::error::Error>> {
+    checked_path(home, root.strip_prefix(home)?)?.ok_or("Antigravity store no longer exists")?;
+    let mut ids = HashSet::new();
+    // An active transaction may still put its saved databases back
+    for entry in fs::read_dir(root)? {
+        if entry?
+            .file_name()
+            .to_string_lossy()
+            .starts_with(STAGE_PREFIX)
+        {
+            return Err("Session cleanup is in progress".into());
+        }
+    }
+    if let Some(path) = checked_path(root, Path::new(INDEX_DB))? {
+        let db = open_db(&path)?;
+        for table in [
+            "conversation_summaries",
+            "conversations_fts",
+            "conversation_parents",
+        ] {
+            if !db.query_row(
+                "SELECT EXISTS(SELECT 1 FROM sqlite_schema WHERE name=?1)",
+                [table],
+                |row| row.get::<_, bool>(0),
+            )? {
+                continue;
+            }
+            let mut stmt = db.prepare(&format!("SELECT DISTINCT conversation_id FROM {table}"))?;
+            for id in stmt.query_map([], |row| row.get::<_, String>(0))? {
+                ids.insert(id?);
+            }
+        }
+    }
+    if let Some(path) = checked_path(root, Path::new(index_name(provider_id)))? {
+        ids.extend(indexed_ids(&fs::read(path)?, provider_id == DESKTOP, true)?);
+    }
+    if let Some(path) = checked_path(root, Path::new(METADATA))? {
+        let metadata: Value = serde_json::from_reader(File::open(path)?)?;
+        ids.extend(
+            metadata["conversations"]
+                .as_object()
+                .ok_or("Unknown session metadata format")?
+                .keys()
+                .cloned(),
+        );
+    }
+    if let Some(path) = checked_path(root, Path::new(RECENTS))? {
+        let recent: BTreeMap<String, String> = serde_json::from_reader(File::open(path)?)?;
+        ids.extend(recent.into_values());
+    }
+    if let Some(path) = checked_file(root, HISTORY)? {
+        for line in BufReader::new(File::open(path)?).split(b'\n') {
+            let line = line?;
+            if line.iter().all(u8::is_ascii_whitespace) {
+                continue;
+            }
+            let row: Value = match serde_json::from_slice(&line) {
+                Ok(row) => row,
+                Err(error) => {
+                    // A committed receipt only needs to recheck the IDs it recorded
+                    if selected.is_none_or(|ids| {
+                        ids.iter().any(|id| {
+                            line.windows(id.len())
+                                .any(|part| part.eq_ignore_ascii_case(id.as_bytes()))
+                        })
+                    }) {
+                        return Err(format!("Invalid {HISTORY} row: {error}").into());
+                    }
+                    continue;
+                }
+            };
+            if let Some(id) = row["conversationId"].as_str() {
+                ids.insert(id.to_owned());
+            }
+        }
+    }
+    // Names themselves are evidence, even when an artifact is empty or unreadable
+    for dir in ["brain", "conversations", "annotations", "presence"] {
+        if let Some(path) = checked_path(root, Path::new(dir))? {
+            for entry in fs::read_dir(path)? {
+                let name = entry?.file_name();
+                let text = name.to_string_lossy();
+                let id = text.split('.').next().unwrap_or_default();
+                if valid_id(id) {
+                    ids.insert(id.to_owned());
+                }
+            }
+        }
+    }
+    Ok(ids.into_iter().map(|id| id.to_ascii_lowercase()).collect())
 }
 
 fn checked_root(home: &Path, root: &Path) -> io::Result<()> {
@@ -538,7 +638,7 @@ fn numeric_time(value: f64) -> Option<u64> {
     (millis.is_finite() && millis >= 0.0 && millis < u64::MAX as f64).then_some(millis as u64)
 }
 
-fn parse_time(text: &str) -> Option<u64> {
+pub(super) fn parse_time(text: &str) -> Option<u64> {
     let text = text.trim();
     if let Ok(value) = text.parse::<f64>() {
         return numeric_time(value);
@@ -707,9 +807,51 @@ mod tests {
     #[test]
     fn ignores_a_cc_switch_profile_path_that_is_not_a_directory() {
         let home = tempfile::tempdir().unwrap();
-        fs::create_dir(home.path().join(".cc-switch")).unwrap();
-        fs::write(home.path().join(".cc-switch/agy"), []).unwrap();
-        assert!(scan(home.path(), "agy").unwrap().is_empty());
+        let home = home.path();
+        let cli = home.join(".gemini/antigravity-cli");
+        let index = create_index(&cli);
+        insert_summary(&index, PARENT, "Default CLI", 0, None);
+        let cc_switch = home.join(".cc-switch");
+        for path in [&cc_switch, &cc_switch.join("agy")] {
+            fs::write(path, []).unwrap();
+            let rows = scan(home, "agy").unwrap();
+            assert_eq!(rows.len(), 1);
+            let (root, id) = locate(home, "agy", Path::new(&rows[0].source_path)).unwrap();
+            assert_eq!(root, cli);
+            assert_eq!(id, PARENT);
+            assert!(super::super::antigravity_store::strict_roots(home, "agy").is_err());
+            fs::remove_file(path).unwrap();
+            fs::create_dir(path).unwrap();
+        }
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn lists_default_cli_without_following_linked_cc_switch_profiles() {
+        use std::os::unix::fs::symlink;
+
+        let home = tempfile::tempdir().unwrap();
+        let home = home.path();
+        let cli = home.join(".gemini/antigravity-cli");
+        let index = create_index(&cli);
+        insert_summary(&index, PARENT, "Default CLI", 0, None);
+        let linked = home.join("linked");
+        let profile = linked.join("agy/work/antigravity-cli");
+        let profile_index = create_index(&profile);
+        insert_summary(&profile_index, FORK, "Linked profile", 0, None);
+        let cc_switch = home.join(".cc-switch");
+        symlink(&linked, &cc_switch).unwrap();
+        let assert_default_only = || {
+            let rows = scan(home, "agy").unwrap();
+            assert_eq!(rows.len(), 1);
+            assert_eq!(rows[0].session_id, PARENT);
+            assert!(super::super::antigravity_store::strict_roots(home, "agy").is_err());
+        };
+        assert_default_only();
+        fs::remove_file(&cc_switch).unwrap();
+        fs::create_dir(&cc_switch).unwrap();
+        symlink(linked.join("agy"), cc_switch.join("agy")).unwrap();
+        assert_default_only();
     }
 
     #[test]

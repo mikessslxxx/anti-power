@@ -6,7 +6,7 @@
 
 Anti-Power 是一个桌面工具 (Tauri + Vue), 用来查看并清理 Antigravity App 和 Antigravity CLI (`agy`) 的本地会话, 不处理其他工具. 早期的 IDE 补丁 (Markdown 复制, LaTeX, Mermaid) 在 v4.0.0 之后已移除.
 
-用量和额度记录交给 [antigravity-usage-monitor](https://github.com/yuhuan-dev/antigravity-usage-monitor) 插件.
+Anti-Power 附带 Anti-Power Usage, 用于查看本地请求用量和费用. 配额监控可使用上游 antigravity-usage-monitor 插件.
 
 ## 目录
 
@@ -14,9 +14,12 @@ Anti-Power 是一个桌面工具 (Tauri + Vue), 用来查看并清理 Antigravit
   - `antigravity_store.rs`: 存储根目录, ID 校验, 不跟随符号链接的路径解析
   - `antigravity_scan.rs`: 会话列表和消息读取
   - `antigravity_clean.rs`: 会话清理
-  - `cleanup_extras.rs`: Antigravity App 窗口状态和缓存, CC Switch 同步记录
-  - `sessions.rs`: 三个 Tauri 命令 (`scan_sessions`, `load_session_messages`, `delete_sessions`)
+  - `cleanup_extras.rs`: Antigravity App 窗口状态和缓存, CC Switch 同步记录, 用量账本清理
+  - `usage_ledger.rs`: 将已删除会话折入 Anti-Power Usage 的匿名合计
+  - `plugin_install.rs`: 插件安装, 卸载和价格表更新
+  - `sessions.rs`: 会话相关的 Tauri 命令 (`scan_sessions`, `load_session_messages`, `delete_sessions`)
 - `patcher/src/`: Vue 前端, 主界面是 `components/SessionViewer.vue`
+- `plugin/`: Anti-Power Usage 的 sidecar 和随附价格表. Vue 面板源码在 `patcher/plugin-ui/`.
 - `patcher/src/locales/`: `zh-CN` 和 `en-US` 文案
 - `.github/workflows/release.yml`: Windows, macOS, Linux 安装包构建
 
@@ -33,12 +36,12 @@ Anti-Power 是一个桌面工具 (Tauri + Vue), 用来查看并清理 Antigravit
 
 ## 清理规则
 
-- Antigravity App, Antigravity CLI, Antigravity IDE 或 (勾选对应选项时) CC Switch 运行时拒绝清理, 并指明需要退出哪一个.
+- Antigravity App, Antigravity CLI 或 Antigravity IDE 运行时拒绝清理. CC Switch 可以保持运行.
 - 不跟随存储目录内的符号链接.
 - 先把待删文件移入 `.anti-power-clean-*`, 并在索引事务中记录提交. 清理中断后, 还原尚未提交的文件, 完成已提交的清理. 扫描时恢复失败只给出警告, 仍然列出会话.
 - 批量清理时每个存储目录只处理一遍: 一次事务, 一次全文索引重建, 一次 `VACUUM`. 整批失败时逐条重试, 但属于整个存储目录的错误不再重试.
 - 摘要索引格式无法识别时直接失败, 不做任何修改.
-- 存储目录外的数据在存储提交后清理, 失败时作为警告返回.
+- 存储目录外的数据在存储提交后通过持久化收据 (`.anti-power-extras-*`, `.anti-power-sync-pending`) 清理, 未完成项在后续扫描时重试, 失败作为警告返回.
 - 子代理会话 (`nesting_depth > 0`) 随所属会话删除, fork 保留.
 - 其他工具能列出的会话这里也要能列出, 包括只剩索引的记录.
 
@@ -51,6 +54,7 @@ npm install
 npm run build          # 类型检查和前端构建
 npm run tauri:dev      # 运行应用
 cd src-tauri && cargo test && cargo clippy --all-targets
+cd ../../plugin/sidecars/panel && npm test
 ```
 
 测试在临时目录里构造存储. 测试中不要对真实存储执行清理.
@@ -61,4 +65,4 @@ cd src-tauri && cargo test && cargo clippy --all-targets
 - 代码注释用英文, 注释符号后一个空格, 末尾不加句号.
 - 中英文文档统一使用英文标点.
 - 已发布的发布说明和更新日志条目保持原样.
-- `patcher/package.json`, `patcher/src-tauri/tauri.conf.json` 和 `patcher/src-tauri/Cargo.toml` 共用一个版本号 (见 `docs/guides/release-guide.md`).
+- `patcher/package.json`, `patcher/src-tauri/tauri.conf.json`, `patcher/src-tauri/Cargo.toml`, `plugin/plugin.json` 和 `plugin/sidecars/panel/package.json` 共用一个版本号 (见 `docs/guides/release-guide.md`).

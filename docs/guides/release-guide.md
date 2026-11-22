@@ -7,6 +7,7 @@
 | `patcher/package.json` | `version` (界面显示的版本号取自这里) |
 | `patcher/src-tauri/tauri.conf.json` | `version` |
 | `patcher/src-tauri/Cargo.toml` | `version` |
+| `plugin/plugin.json`, `plugin/sidecars/panel/package.json` | `version` |
 | `README.md`, `README_EN.md` | 版本徽章, 已核对的 Antigravity App 和 Antigravity CLI 版本 |
 | `CHANGELOG.md`, `CHANGELOG_EN.md` | 新版本记录 |
 | `release-notes.md` | 本次发布说明 |

@@ -1,10 +1,13 @@
 //! Anti-Power Rust backend
 //!
-//! Browse and clean local Antigravity App and Antigravity CLI sessions
+//! Browse and clean local Antigravity App and Antigravity CLI sessions, and install the usage plugin
 
 mod commands;
 
-use commands::{delete_sessions, load_session_messages, scan_sessions};
+use commands::{
+    delete_sessions, install_plugin, load_session_messages, plugin_status, scan_sessions,
+    uninstall_plugin, update_plugin_catalog,
+};
 use tauri::Manager;
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
@@ -30,7 +33,11 @@ pub fn run() {
         .invoke_handler(tauri::generate_handler![
             scan_sessions,
             load_session_messages,
-            delete_sessions
+            delete_sessions,
+            plugin_status,
+            install_plugin,
+            uninstall_plugin,
+            update_plugin_catalog
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

@@ -10,7 +10,7 @@
         "checkFailed": "Check Failed",
         "checkUpdate": "Check Update",
         "checking": "Checking...",
-        "copyright": "© 2026 Anti-Power · MIT License",
+        "copyright": "© 2026 Anti-Power · GPL-3.0 License",
         "desc": "A local session manager for the Antigravity App and Antigravity CLI.",
         "download": "Download",
         "error": {
@@ -54,7 +54,7 @@
         "optionAppCache": "Antigravity App browser cache",
         "optionAppCacheHint": "Empty the Antigravity App's Cache and Code Cache folders, which can hold session IDs. They are rebuilt automatically, so the next launch is a little slower.",
         "optionCcSwitch": "CC Switch sync records",
-        "optionCcSwitchHint": "Remove matching sync records from ~/.cc-switch and its backups (quit CC Switch first); usage and cost history is kept.",
+        "optionCcSwitchHint": "Remove sync records for selected and missing sessions from ~/.cc-switch and its backups. Works while CC Switch is running; usage and cost history is kept.",
         "projectDir": "Project",
         "providers": {
             "antigravity": "Antigravity App",
@@ -100,5 +100,29 @@
         "switchLanguage": "切换到中文",
         "toggleThemeDark": "Switch to dark theme",
         "toggleThemeLight": "Switch to light theme"
+    },
+    "pluginModal": {
+        "title": "Usage plugin",
+        "desc": "Records content, tokens, cache, speed, and cost for each model request from local session stores without uploading data.",
+        "installed": "Installed",
+        "notInstalled": "Not installed",
+        "bundled": "Bundled",
+        "catalog": "Price catalog",
+        "location": "Location",
+        "install": "Install",
+        "upgrade": "Update to v{version}",
+        "reinstall": "Reinstall",
+        "uninstall": "Uninstall",
+        "updateCatalog": "Update prices",
+        "installed_done": "Installed.",
+        "uninstalled": "Uninstalled. Usage history stays in Antigravity's plugin data.",
+        "uninstallConfirm": "Uninstall Anti-Power Usage? Usage history is kept and comes back if you reinstall.",
+        "catalogUpdated": "Prices updated. The plugin recalculates costs on its own.",
+        "catalogHttp": "Could not download prices: HTTP {status}",
+        "restart": "Antigravity is running. Restart it for the change to take effect.",
+        "enable": "Turn the plugin on under Customizations → Installed in Antigravity, then open it from the side panel.",
+        "foreign": "The plugin folder is occupied by something else, so Anti-Power leaves it alone.",
+        "missingBundle": "This Anti-Power build does not include the plugin.",
+        "footer": "Prices come from antigravity-usage-monitor (GPL-3.0)."
     }
 }

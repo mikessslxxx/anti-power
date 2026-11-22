@@ -41,7 +41,7 @@ pub struct SessionRef {
 }
 
 /// Optional cleanup beyond the session stores
-#[derive(Debug, Clone, Copy, Default, Deserialize)]
+#[derive(Debug, Clone, Copy, Default, Deserialize, Serialize)]
 #[serde(rename_all = "camelCase", default)]
 pub struct CleanOptions {
     /// Remove session sync records from CC Switch and its backups

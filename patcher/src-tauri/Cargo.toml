@@ -1,8 +1,8 @@
 [package]
 name = "Anti-Power"
-version = "5.0.1"
+version = "5.1.0"
 description = "Local session manager for the Antigravity App and Antigravity CLI"
-license = "MIT"
+license = "GPL-3.0-only"
 repository = "https://github.com/mikessslxxx/anti-power"
 edition = "2021"
 rust-version = "1.95"

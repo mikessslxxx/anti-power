@@ -4,6 +4,22 @@
 
 ---
 
+## v5.1.0 (2026-11-22)
+
+### Usage Plugin
+- Bundle **Anti-Power Usage**: install, upgrade, uninstall, or update prices from the title bar dialog, then enable under **Customizations → Installed** in the Antigravity App; uninstalling preserves recorded usage
+- Collect local requests in the background and view token usage, cache hit rate, and estimated cost by date, model, source, or session; open a session to inspect each turn's prompt, reply, thinking, tool calls, time to first token, and output speed (content is read on demand from local stores)
+- Count multiple local copies of a session once, and fold recorded usage and cost into anonymous "Deleted sessions" totals after the last copy is deleted (or confirmed missing for 60 seconds)
+
+### Session Cleanup
+- **CC Switch sync records** also clears leftover sync cursors for sessions already gone from local stores across the main database and backups (preserving usage and cost history), and works while CC Switch is open (refresh after it exits to finish verification)
+- Reopening Anti-Power or refreshing the session list retries any unfinished window state, usage ledger, cache, or sync cleanup
+
+### License
+- Switch to GPL-3.0-only starting with v5.1.0; the MIT notice for v5.0.1 and earlier stays in `LICENSE-MIT`, and upstream plugin credits are in `plugin/NOTICE.md`
+
+---
+
 ## v5.0.1 (2026-11-20)
 
 ### New Features

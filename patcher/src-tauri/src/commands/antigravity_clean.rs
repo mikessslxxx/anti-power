@@ -1,5 +1,6 @@
+use super::antigravity_scan::live_ids;
 use super::antigravity_store::{
-    checked_path, locate, roots, valid_id, DESKTOP, INDEX_DB, METADATA,
+    checked_file, checked_path, locate, roots, valid_id, CLI, DESKTOP, INDEX_DB, METADATA,
 };
 use super::cleanup_extras::{self, Cleaned};
 use super::sessions::{CleanOptions, DeleteReport, SessionRef};
@@ -12,16 +13,19 @@ use std::path::{Component, Path, PathBuf};
 use std::time::Duration;
 use sysinfo::{ProcessRefreshKind, ProcessesToUpdate, System, UpdateKind};
 
-const STAGE_PREFIX: &str = ".anti-power-clean-";
+pub(super) const STAGE_PREFIX: &str = ".anti-power-clean-";
 const PREPARE_PREFIX: &str = ".anti-power-prepare-";
 const PURGE_PREFIX: &str = ".anti-power-purge-";
 const COMMIT_TABLE: &str = "anti_power_cleanup_commits";
+const RECEIPT: &str = "post-clean.json";
+const RECEIPT_PREFIX: &str = ".anti-power-extras-";
+const SYNC_PENDING: &str = ".anti-power-sync-pending";
 const PLAN: &str = "plan.json";
 const LOCK: &str = ".anti-power-clean.lock";
 const DESKTOP_INDEX: &str = "agyhub_summaries_proto.pb";
 const CLI_INDEX: &str = "jetbox_summaries_proto.pb";
-const RECENTS: &str = "cache/last_conversations.json";
-const HISTORY: &str = "history.jsonl";
+pub(super) const RECENTS: &str = "cache/last_conversations.json";
+pub(super) const HISTORY: &str = "history.jsonl";
 const SIDECAR: &str = "sidecar_data";
 type Filter = fn(&[u8], &BTreeSet<String>) -> Result<Option<Vec<u8>>>;
 type Result<T> = std::result::Result<T, Box<dyn std::error::Error>>;
@@ -50,23 +54,20 @@ enum Client {
 
 /// Delete sessions and clean related external app data
 pub(super) fn delete(home: &Path, sessions: &[SessionRef], options: CleanOptions) -> DeleteReport {
-    let check_clients = || require_clients_closed(options.cc_switch);
-    let (errors, cleaned) = delete_with(home, sessions, check_clients);
-    let warnings = if cleaned.is_empty() {
-        Vec::new()
-    } else if let Err(error) = check_clients() {
-        vec![format!("Skipped cleaning related app data: {error}")]
-    } else {
-        cleanup_extras::run(home, &cleaned, options)
-    };
+    let (errors, cleaned_roots) = delete_with(home, sessions, options, require_clients_closed);
+    let mut warnings = Vec::new();
+    for root in cleaned_roots {
+        warnings.extend(recover_store(home, &root));
+    }
     DeleteReport { errors, warnings }
 }
 
 fn delete_with(
     home: &Path,
     sessions: &[SessionRef],
+    options: CleanOptions,
     check_clients: impl Fn() -> Result<()>,
-) -> (Vec<Option<String>>, Vec<Cleaned>) {
+) -> (Vec<Option<String>>, Vec<PathBuf>) {
     let mut results = vec![None; sessions.len()];
     let mut cleaned = Vec::new();
     let mut stores = BTreeMap::<_, Vec<(usize, String)>>::new();
@@ -87,18 +88,18 @@ fn delete_with(
     }
     for ((root, index), group) in stores {
         let ids: Vec<&str> = group.iter().map(|(_, id)| id.as_str()).collect();
-        let mut removed = BTreeSet::new();
-        match clean(&root, index, &ids, &check_clients) {
-            Ok(ids) => removed = ids,
+        let mut committed = false;
+        match clean(&root, index, &ids, options, &check_clients) {
+            Ok(()) => committed = true,
             Err(error) => {
                 // Retry sessions individually on failure, but skip retries for store-wide errors
                 let mut error =
                     (group.len() == 1 || error.is::<StoreWide>()).then(|| error.to_string());
                 for (i, id) in &group {
                     results[*i] = error.clone().or_else(|| {
-                        match clean(&root, index, &[id], &check_clients) {
-                            Ok(ids) => {
-                                removed.extend(ids);
+                        match clean(&root, index, &[id], options, &check_clients) {
+                            Ok(()) => {
+                                committed = true;
                                 None
                             }
                             Err(retry) => {
@@ -112,8 +113,8 @@ fn delete_with(
                 }
             }
         }
-        if !removed.is_empty() {
-            cleaned.push(Cleaned { root, ids: removed });
+        if committed {
+            cleaned.push(root);
         }
     }
     (results, cleaned)
@@ -142,7 +143,35 @@ pub(super) fn index_name(provider_id: &str) -> &'static str {
     }
 }
 
-fn require_clients_closed(cc_switch: bool) -> Result<()> {
+struct Running {
+    clients: [bool; 2],
+    cc_switch: bool,
+}
+
+impl Running {
+    fn require_closed(self) -> Result<Self> {
+        let quit = match self.clients {
+            [false, false] => return Ok(self),
+            [true, false] => "the Antigravity App and Antigravity CLI",
+            [false, true] => "Antigravity IDE",
+            [true, true] => "the Antigravity App, Antigravity CLI, and Antigravity IDE",
+        };
+        Err(format!("Quit {quit} before cleaning sessions").into())
+    }
+}
+
+/// Whether an Antigravity client runs, for changes that apply after it restarts
+pub(super) fn antigravity_running() -> std::result::Result<bool, String> {
+    running_clients()
+        .map(|running| running.clients.contains(&true))
+        .map_err(|error| error.to_string())
+}
+
+fn require_clients_closed() -> Result<()> {
+    running_clients()?.require_closed().map(drop)
+}
+
+fn running_clients() -> Result<Running> {
     let mut system = System::new()?;
     system.refresh_processes_specifics(
         ProcessesToUpdate::All,
@@ -152,8 +181,10 @@ fn require_clients_closed(cc_switch: bool) -> Result<()> {
     if system.processes().is_empty() {
         return Err("Could not verify that Google Antigravity clients are closed".into());
     }
-    let mut running = [false; 2];
-    let mut cc_switch_running = false;
+    let mut running = Running {
+        clients: [false; 2],
+        cc_switch: false,
+    };
     for process in system.processes().values() {
         let name = process
             .exe()
@@ -165,20 +196,11 @@ fn require_clients_closed(cc_switch: bool) -> Result<()> {
             .map(|path| path.to_string_lossy())
             .unwrap_or_default();
         if let Some(client) = client(&name, &path) {
-            running[client as usize] = true;
+            running.clients[client as usize] = true;
         }
-        cc_switch_running |= cc_switch && is_cc_switch(&name);
+        running.cc_switch |= is_cc_switch(&name);
     }
-    let quit = match running {
-        [false, false] if cc_switch_running => {
-            return Err("Quit CC Switch before cleaning its records".into());
-        }
-        [false, false] => return Ok(()),
-        [true, false] => "the Antigravity App and Antigravity CLI",
-        [false, true] => "Antigravity IDE",
-        [true, true] => "the Antigravity App, Antigravity CLI, and Antigravity IDE",
-    };
-    Err(format!("Quit {quit} before cleaning sessions").into())
+    Ok(running)
 }
 
 fn is_cc_switch(name: &str) -> bool {
@@ -210,13 +232,21 @@ fn clean(
     root: &Path,
     index: &str,
     ids: &[&str],
+    options: CleanOptions,
     check_clients: impl Fn() -> Result<()>,
-) -> Result<BTreeSet<String>> {
+) -> Result<()> {
     check_clients().map_err(store_wide)?;
     with_store_lock(root, |root| {
         let mut connection = open_index(root).map_err(store_wide)?;
         recover_locked(root, connection.as_ref()).map_err(store_wide)?;
-        clean_locked(root, index, ids, check_clients, connection.as_mut())
+        clean_locked(
+            root,
+            index,
+            ids,
+            options,
+            check_clients,
+            connection.as_mut(),
+        )
     })
 }
 
@@ -228,39 +258,185 @@ pub(super) fn recover_pending(home: &Path, provider_id: &str) -> Vec<String> {
         let Ok(Some(root)) = checked_path(home, relative) else {
             continue;
         };
-        let recover = || -> Result<()> {
-            if !root.is_dir() || recovery_dirs(&root)?.is_empty() {
-                return Ok(());
-            }
-            require_clients_closed(false)?;
-            with_store_lock(&root, |root| {
-                let connection = open_index(root)?;
-                recover_locked(root, connection.as_ref())?;
-                compact(connection.as_ref());
-                Ok(())
-            })
-        };
-        if let Err(error) = recover() {
-            warnings.push(format!("{}: {error}", root.display()));
-        }
+        warnings.extend(recover_store(home, &root));
     }
     warnings
 }
 
-fn with_store_lock<T>(root: &Path, action: impl FnOnce(&Path) -> Result<T>) -> Result<T> {
+#[derive(Serialize, Deserialize)]
+struct Receipt {
+    local_done: bool,
+    ids: BTreeSet<String>,
+    #[serde(default, skip_serializing_if = "BTreeSet::is_empty")]
+    deleted_databases: BTreeSet<PathBuf>,
+    options: CleanOptions,
+}
+
+fn receipts(root: &Path) -> Result<Vec<PathBuf>> {
+    let mut paths = Vec::new();
+    for entry in fs::read_dir(root)? {
+        let entry = entry?;
+        let name = entry.file_name();
+        if let Some(suffix) = name.to_str().and_then(|n| n.strip_prefix(RECEIPT_PREFIX)) {
+            if suffix.len() == 12 && suffix.bytes().all(|b| b.is_ascii_alphanumeric()) {
+                if !entry.file_type()?.is_file() {
+                    return Err("Invalid cleanup receipt".into());
+                }
+                paths.push(entry.path());
+            }
+        }
+    }
+    Ok(paths)
+}
+
+fn recover_store(home: &Path, root: &Path) -> Vec<String> {
+    let recover = || -> Result<Vec<String>> {
+        let stages = !recovery_dirs(root)?.is_empty();
+        if !stages && receipts(root)?.is_empty() && checked_file(root, SYNC_PENDING)?.is_none() {
+            return Ok(Vec::new());
+        }
+        let running = running_clients()?.require_closed()?;
+        with_store_lock(root, |locked| {
+            if !recovery_dirs(locked)?.is_empty() {
+                let connection = open_index(locked)?;
+                recover_locked(locked, connection.as_ref())?;
+                compact(connection.as_ref());
+            }
+            replay_extras(home, root, running.cc_switch)
+        })
+    };
+    recover().unwrap_or_else(|error| vec![format!("{}: {error}", root.display())])
+}
+
+fn replay_extras(home: &Path, root: &Path, cc_running: bool) -> Result<Vec<String>> {
+    let mut warnings = Vec::new();
+    let pending = root.join(SYNC_PENDING);
+    let mut verify = checked_file(root, SYNC_PENDING)?.is_some();
+    let mut swept = false;
+    let receipts = receipts(root)?;
+    let provider = if root == home.join(".gemini/antigravity") {
+        DESKTOP
+    } else {
+        CLI
+    };
+    for path in receipts {
+        let mut receipt: Receipt = serde_json::from_reader(File::open(&path)?)?;
+        if !receipt.ids.iter().all(|id| valid_id(id)) {
+            return Err("Invalid session ID in cleanup receipt".into());
+        }
+        // Recheck the store on replay in case the user has restored a backup
+        let mut can_clean_targets = true;
+        if !receipt.ids.is_empty() && (!receipt.local_done || receipt.options.cc_switch) {
+            match live_ids(home, root, provider, Some(&receipt.ids)) {
+                Ok(live) => receipt
+                    .ids
+                    .retain(|id| !live.contains(&id.to_ascii_lowercase())),
+                Err(error) => {
+                    warnings.push(format!(
+                        "{}: could not recheck deleted sessions: {error}",
+                        root.display()
+                    ));
+                    can_clean_targets = false;
+                }
+            }
+        }
+        let group = Cleaned {
+            root: root.to_owned(),
+            ids: receipt.ids,
+        };
+        if can_clean_targets && !receipt.local_done {
+            let errors = cleanup_extras::clean_local(home, &group, &receipt.deleted_databases);
+            receipt.local_done = errors.is_empty();
+            warnings.extend(errors);
+        }
+        if receipt.local_done {
+            receipt.deleted_databases.clear();
+        }
+        if receipt.options.app_cache {
+            let errors = cleanup_extras::clean_caches(home);
+            receipt.options.app_cache = !errors.is_empty();
+            warnings.extend(errors);
+        }
+        if can_clean_targets && receipt.options.cc_switch {
+            // An in-flight import may write a cursor after our transaction
+            if cc_running && !verify {
+                File::create_new(&pending)?.sync_all()?;
+                verify = true;
+            }
+            let result = cleanup_extras::clean_sync(home, &group, cc_running);
+            swept = true;
+            receipt.options.cc_switch = !result.targets_done;
+            // An incomplete orphan sweep can retry without retaining selected IDs
+            if !result.warnings.is_empty() && !verify {
+                File::create_new(&pending)?.sync_all()?;
+                verify = true;
+            }
+            if verify && !cc_running && result.warnings.is_empty() {
+                fs::remove_file(&pending)?;
+                verify = false;
+            }
+            warnings.extend(result.warnings);
+        }
+        if receipt.local_done && !receipt.options.app_cache && !receipt.options.cc_switch {
+            fs::remove_file(path)?;
+        } else {
+            receipt.ids = if receipt.local_done && !receipt.options.cc_switch {
+                BTreeSet::new()
+            } else {
+                group.ids
+            };
+            cleanup_extras::replace_file(&path, &serde_json::to_vec(&receipt)?)?;
+        }
+    }
+    if verify && !swept {
+        let group = Cleaned {
+            root: root.to_owned(),
+            ids: BTreeSet::new(),
+        };
+        let errors = cleanup_extras::clean_sync(home, &group, cc_running).warnings;
+        if errors.is_empty() && !cc_running {
+            fs::remove_file(pending)?;
+        }
+        warnings.extend(errors);
+    }
+    if verify && cc_running {
+        warnings.push(
+            "CC Switch sync cleanup is pending verification. Refresh after CC Switch exits.".into(),
+        );
+    }
+    Ok(warnings)
+}
+
+fn store_lock_file(root: &Path) -> Result<File> {
+    let path = checked_file(root, LOCK)?.unwrap_or_else(|| root.join(LOCK));
+    Ok(fs::OpenOptions::new()
+        .read(true)
+        .write(true)
+        .create(true)
+        .truncate(false)
+        .open(path)?)
+}
+
+// Keep a different store from staging files while its absence evidence is in use
+pub(super) fn store_read_lock(root: &Path) -> Result<File> {
+    let file = match checked_file(root, LOCK)? {
+        Some(path) => File::open(path)?,
+        None => store_lock_file(root)?,
+    };
+    file.try_lock_shared()?;
+    Ok(file)
+}
+
+pub(super) fn with_store_lock<T>(
+    root: &Path,
+    action: impl FnOnce(&Path) -> Result<T>,
+) -> Result<T> {
     let lock = || -> Result<(PathBuf, File)> {
         if fs::symlink_metadata(root)?.file_type().is_symlink() {
             return Err("Cannot clean an Antigravity store through a symlink".into());
         }
         let root = root.canonicalize()?;
-        // Keep the lock path stable so concurrent callers always lock the same file
-        let lock_path = checked_file(&root, LOCK)?.unwrap_or_else(|| root.join(LOCK));
-        let lock = fs::OpenOptions::new()
-            .read(true)
-            .write(true)
-            .create(true)
-            .truncate(false)
-            .open(lock_path)?;
+        let lock = store_lock_file(&root)?;
         lock.try_lock()
             .map_err(|error| format!("Cannot lock session cleanup: {error}"))?;
         Ok((root, lock))
@@ -273,9 +449,10 @@ fn clean_locked(
     root: &Path,
     index: &str,
     ids: &[&str],
+    options: CleanOptions,
     check_clients: impl Fn() -> Result<()>,
     connection: Option<&mut Connection>,
-) -> Result<BTreeSet<String>> {
+) -> Result<()> {
     let mut connection = connection;
     let tx = connection
         .as_mut()
@@ -318,14 +495,15 @@ fn clean_locked(
         remove_index_rows(tx, &ids)?;
     }
     check_clients().map_err(store_wide)?;
-    if files.is_empty() && replacements.is_empty() {
-        tx.map(rusqlite::Transaction::commit).transpose()?;
-        compact(connection.as_deref());
-        return Ok(ids);
-    }
-
     let stage = Stage::prepare(root, files, &replacements, tx.is_some())?;
+    let receipt = Receipt {
+        local_done: false,
+        ids,
+        deleted_databases: stage.deleted_databases(),
+        options,
+    };
     let result = (move || -> Result<()> {
+        stage.write_receipt(&receipt)?;
         stage.apply(root, &replacements)?;
         check_clients().map_err(store_wide)?;
         stage.commit(tx)
@@ -336,7 +514,7 @@ fn clean_locked(
     match (result, recovery) {
         (Ok(()), Ok(())) => {
             compact(connection.as_deref());
-            Ok(ids)
+            Ok(())
         }
         (Err(error), Ok(())) => Err(error),
         (Ok(()), Err(error)) => Err(format!(
@@ -472,16 +650,6 @@ fn lock_presence(root: &Path, ids: &BTreeSet<String>) -> Result<Vec<File>> {
     Ok(locks)
 }
 
-fn checked_file(root: &Path, relative: &str) -> Result<Option<PathBuf>> {
-    let path = checked_path(root, Path::new(relative))?;
-    if let Some(path) = &path {
-        if !path.is_file() {
-            return Err(format!("Expected a file at {}", path.display()).into());
-        }
-    }
-    Ok(path)
-}
-
 fn session_files(root: &Path, ids: &BTreeSet<String>) -> Result<Vec<PathBuf>> {
     let mut files = Vec::new();
     for id in ids {
@@ -510,6 +678,14 @@ fn session_artifacts(id: &str) -> [String; 7] {
         format!("annotations/{id}.pbtxt"),
         format!("presence/{id}.lock"),
     ]
+}
+
+pub(super) fn conversation_db_id(path: &Path) -> Option<&str> {
+    let id = path.file_stem()?.to_str()?;
+    (path.parent()? == Path::new("conversations")
+        && path.extension()?.to_str()? == "db"
+        && valid_id(id))
+    .then_some(id)
 }
 
 fn mentions(bytes: &[u8], ids: &BTreeSet<String>) -> bool {
@@ -714,21 +890,21 @@ fn filtered_index(bytes: &[u8], ids: &BTreeSet<String>, desktop: bool) -> Result
     Ok((result.len() != bytes.len()).then_some(result))
 }
 
-/// List the conversations in a summary index, or none when its layout is unknown
-pub(super) fn indexed_ids(bytes: &[u8], desktop: bool) -> Vec<String> {
+/// Decode the summary index without treating malformed entries as an empty store
+pub(super) fn indexed_ids(bytes: &[u8], desktop: bool, orphan_sweep: bool) -> Result<Vec<String>> {
     let mut ids = Vec::new();
     let mut rest = bytes;
     while !rest.is_empty() {
-        let Some((tag, body, _)) = next_field(&mut rest) else {
-            return Vec::new();
-        };
-        match summary_entry_id(tag, body, desktop) {
-            Ok(Some(id)) => ids.push(id.to_owned()),
-            Ok(None) => {}
-            Err(()) => return Vec::new(),
+        let (tag, body, _) = next_field(&mut rest).ok_or("Malformed summary index")?;
+        if let Some(id) =
+            summary_entry_id(tag, body, desktop).map_err(|_| "Malformed summary entry")?
+        {
+            ids.push(id.to_owned());
+        } else if orphan_sweep && tag & 7 == 2 {
+            return Err("Unknown field in the summary index".into());
         }
     }
-    ids
+    Ok(ids)
 }
 
 fn summary_entry_id(tag: u64, body: &[u8], desktop: bool) -> std::result::Result<Option<&str>, ()> {
@@ -844,6 +1020,13 @@ fn recover_locked(root: &Path, connection: Option<&Connection>) -> Result<()> {
             let stage = Stage::load(dir)?;
             if !stage.is_committed(connection)? {
                 stage.restore(root)?;
+            } else if let Some(receipt) = checked_file(dir, RECEIPT)? {
+                let suffix = dir
+                    .file_name()
+                    .and_then(|n| n.to_str())
+                    .and_then(|n| n.strip_prefix(STAGE_PREFIX))
+                    .ok_or("Invalid cleanup stage")?;
+                fs::rename(receipt, root.join(format!("{RECEIPT_PREFIX}{suffix}")))?;
             }
             *dir = phase_path(root, dir, Phase::Active, Phase::Purge)?;
             *phase = Phase::Purge;
@@ -926,6 +1109,15 @@ impl PlannedFile {
 }
 
 impl Stage {
+    fn deleted_databases(&self) -> BTreeSet<PathBuf> {
+        self.plan
+            .files
+            .iter()
+            .filter(|file| !file.replace && conversation_db_id(&file.path).is_some())
+            .map(|file| file.path.clone())
+            .collect()
+    }
+
     fn prepare(
         root: &Path,
         files: Vec<PathBuf>,
@@ -971,11 +1163,10 @@ impl Stage {
             .ok_or_else(|| format!("Cleanup recovery plan missing at {}", dir.display()))?;
         let plan: CleanupPlan = serde_json::from_reader(File::open(file)?)?;
         let mut paths = BTreeSet::new();
-        if plan.files.is_empty()
-            || !plan
-                .files
-                .iter()
-                .all(|file| file.validate() && paths.insert(&file.path))
+        if !plan
+            .files
+            .iter()
+            .all(|file| file.validate() && paths.insert(&file.path))
         {
             return Err(format!("Invalid cleanup recovery plan at {}", dir.display()).into());
         }
@@ -983,6 +1174,13 @@ impl Stage {
             dir: dir.to_owned(),
             plan,
         })
+    }
+
+    fn write_receipt(&self, receipt: &Receipt) -> Result<()> {
+        let mut file = File::create_new(self.dir.join(RECEIPT))?;
+        serde_json::to_writer(&mut file, receipt)?;
+        file.sync_all()?;
+        Ok(())
     }
 
     fn apply(&self, root: &Path, replacements: &[Replacement]) -> Result<()> {
@@ -1090,6 +1288,7 @@ impl Stage {
 
 #[cfg(test)]
 mod tests {
+    use super::super::antigravity_store::APP_DATA;
     use super::*;
     use std::cell::Cell;
 
@@ -1214,7 +1413,14 @@ mod tests {
         for suffix in [".db", ".db-wal", ".db-shm", ".db-journal"] {
             fs::remove_file(root.join("conversations").join(format!("{TARGET}{suffix}"))).unwrap();
         }
-        clean(root, DESKTOP_INDEX, &[TARGET], || Ok(())).unwrap();
+        clean(
+            root,
+            DESKTOP_INDEX,
+            &[TARGET],
+            CleanOptions::default(),
+            || Ok(()),
+        )
+        .unwrap();
         assert_rows(root, &[FORK]);
         assert!(!root.join("brain").join(NESTED).exists());
         assert!(!root
@@ -1261,7 +1467,14 @@ mod tests {
             .windows(NESTED.len())
             .any(|bytes| bytes == NESTED.as_bytes()));
         assert!(root.join(LOCK).is_file());
-        clean(root, DESKTOP_INDEX, &[TARGET], || Ok(())).unwrap();
+        clean(
+            root,
+            DESKTOP_INDEX,
+            &[TARGET],
+            CleanOptions::default(),
+            || Ok(()),
+        )
+        .unwrap();
     }
 
     #[test]
@@ -1270,14 +1483,20 @@ mod tests {
         let root = temp.path();
         let proto = fs::read(root.join(DESKTOP_INDEX)).unwrap();
         let checks = Cell::new(0);
-        let error = clean(root, DESKTOP_INDEX, &[TARGET], || {
-            checks.set(checks.get() + 1);
-            if checks.get() == 3 {
-                Err("client restarted".into())
-            } else {
-                Ok(())
-            }
-        })
+        let error = clean(
+            root,
+            DESKTOP_INDEX,
+            &[TARGET],
+            CleanOptions::default(),
+            || {
+                checks.set(checks.get() + 1);
+                if checks.get() == 3 {
+                    Err("client restarted".into())
+                } else {
+                    Ok(())
+                }
+            },
+        )
         .unwrap_err();
         assert_eq!(error.to_string(), "client restarted");
         assert_rows(root, &[TARGET, FORK, NESTED]);
@@ -1317,7 +1536,14 @@ mod tests {
         let temp = store();
         let root = temp.path();
         fs::write(root.join(DESKTOP_INDEX), [10, 255]).unwrap();
-        assert!(clean(root, DESKTOP_INDEX, &[TARGET], || Ok(())).is_err());
+        assert!(clean(
+            root,
+            DESKTOP_INDEX,
+            &[TARGET],
+            CleanOptions::default(),
+            || Ok(())
+        )
+        .is_err());
         assert_rows(root, &[TARGET, FORK, NESTED]);
         assert!(root.join("brain").join(TARGET).is_dir());
     }
@@ -1345,7 +1571,14 @@ mod tests {
                 .any(|bytes| bytes == term.as_bytes())
         };
         assert!(contains("deletedsearchfixture"));
-        clean(root, DESKTOP_INDEX, &[TARGET], || Ok(())).unwrap();
+        clean(
+            root,
+            DESKTOP_INDEX,
+            &[TARGET],
+            CleanOptions::default(),
+            || Ok(()),
+        )
+        .unwrap();
         assert!(!contains("deletedsearchfixture"));
         assert!(contains("keptsearchfixture"));
         assert_rows(root, &[FORK]);
@@ -1377,6 +1610,14 @@ mod tests {
         if let Some(tx) = &tx {
             remove_index_rows(tx, &ids).unwrap();
         }
+        stage
+            .write_receipt(&Receipt {
+                ids: ids.clone(),
+                options: CleanOptions::default(),
+                local_done: false,
+                deleted_databases: stage.deleted_databases(),
+            })
+            .unwrap();
         stage.apply(&root, &replacements).unwrap();
         if std::env::var_os("ANTI_POWER_INTERRUPTION_COMMIT").is_some() {
             stage.commit(tx).unwrap();
@@ -1415,6 +1656,7 @@ mod tests {
                 let conn = open_index(root).unwrap();
                 recover_locked(root, conn.as_ref()).unwrap();
                 assert!(recovery_dirs(root).unwrap().is_empty());
+                assert_eq!(receipts(root).unwrap().len(), usize::from(committed));
                 assert_eq!(root.join("brain").join(TARGET).is_dir(), !committed);
                 assert_eq!(
                     fs::read(root.join(DESKTOP_INDEX)).unwrap() == original_index,
@@ -1431,6 +1673,323 @@ mod tests {
                 }
             }
         }
+    }
+
+    fn write_conversations(root: &Path, ids: &[&str]) {
+        let dir = root.join("conversations");
+        fs::create_dir_all(&dir).unwrap();
+        for id in ids {
+            fs::write(dir.join(format!("{id}.db")), "fixture").unwrap();
+        }
+    }
+
+    fn sync_db(home: &Path) -> Connection {
+        let dir = home.join(".cc-switch");
+        fs::create_dir_all(&dir).unwrap();
+        let db = Connection::open(dir.join("cc-switch.db")).unwrap();
+        db.execute_batch("CREATE TABLE session_log_sync(file_path TEXT PRIMARY KEY)")
+            .unwrap();
+        db
+    }
+
+    fn insert_cursor(db: &Connection, root: &Path, id: &str) -> String {
+        let cursor = format!("agy:{}/brain/{id}/transcript.jsonl", root.display());
+        db.execute("INSERT INTO session_log_sync VALUES (?1)", [&cursor])
+            .unwrap();
+        cursor
+    }
+
+    fn sync_rows(db: &Connection) -> Vec<String> {
+        db.prepare("SELECT file_path FROM session_log_sync ORDER BY 1")
+            .unwrap()
+            .query_map([], |row| row.get(0))
+            .unwrap()
+            .collect::<rusqlite::Result<_>>()
+            .unwrap()
+    }
+
+    #[test]
+    fn an_incomplete_orphan_sweep_retries_without_keeping_selected_ids() {
+        let temp = tempfile::tempdir().unwrap();
+        let home = temp.path();
+        let app = home.join(".gemini/antigravity");
+        let profile = home.join(".cc-switch/agy/work/antigravity-cli");
+        let metadata = profile.join(METADATA);
+        fs::create_dir_all(metadata.parent().unwrap()).unwrap();
+        fs::write(&metadata, "unreadable").unwrap();
+        let db = sync_db(home);
+        let orphan = insert_cursor(&db, &profile, FORK);
+        insert_cursor(&db, &app, TARGET);
+        write_conversations(&app, &[TARGET]);
+        clean(
+            &app,
+            DESKTOP_INDEX,
+            &[TARGET],
+            CleanOptions {
+                cc_switch: true,
+                app_cache: false,
+            },
+            || Ok(()),
+        )
+        .unwrap();
+        assert!(!replay_extras(home, &app, false).unwrap().is_empty());
+        assert!(receipts(&app).unwrap().is_empty());
+        assert!(fs::read(app.join(SYNC_PENDING)).unwrap().is_empty());
+        assert_eq!(sync_rows(&db), [orphan.as_str()]);
+
+        let offline = profile.with_file_name("offline");
+        fs::rename(&profile, &offline).unwrap();
+        fs::write(&profile, "not a store").unwrap();
+        let warnings = replay_extras(home, &app, false).unwrap();
+        assert!(warnings
+            .iter()
+            .any(|warning| warning.contains("could not enumerate agy")));
+        assert!(app.join(SYNC_PENDING).exists());
+        assert_eq!(sync_rows(&db), [orphan]);
+
+        fs::remove_file(&profile).unwrap();
+        fs::rename(offline, &profile).unwrap();
+        fs::remove_file(metadata).unwrap();
+        assert!(replay_extras(home, &app, false).unwrap().is_empty());
+        assert!(sync_rows(&db).is_empty());
+        assert!(!app.join(SYNC_PENDING).exists());
+    }
+
+    #[test]
+    fn torn_history_delays_only_cleanup_that_needs_its_evidence() {
+        let temp = tempfile::tempdir().unwrap();
+        let home = temp.path();
+        let cli = home.join(".gemini/antigravity-cli");
+        write_conversations(&cli, &[TARGET]);
+        let history_path = cli.join(HISTORY);
+        let torn_row = |id| format!("{{\"conversationId\":\"{id}\",\"display\":");
+        let unrelated = torn_row(FORK);
+        fs::write(&history_path, history(&[TARGET]) + &unrelated).unwrap();
+
+        let app_data = home.join(APP_DATA);
+        let cache = app_data.join("Cache");
+        fs::create_dir_all(&cache).unwrap();
+        let state = app_data.join("app_storage.json");
+        fs::write(
+            &state,
+            format!(r#"{{"antigravity-multi-conversation-layout-v3-{TARGET}":"open"}}"#),
+        )
+        .unwrap();
+        let db = sync_db(home);
+        let selected = insert_cursor(&db, &cli, TARGET);
+        let orphan = insert_cursor(&db, &cli, FORK);
+        clean(
+            &cli,
+            CLI_INDEX,
+            &[TARGET],
+            CleanOptions {
+                cc_switch: true,
+                app_cache: true,
+            },
+            || Ok(()),
+        )
+        .unwrap();
+        let remaining = history(&[]) + &unrelated;
+        assert_eq!(fs::read_to_string(&history_path).unwrap(), remaining);
+
+        fs::write(&history_path, history(&[]) + &torn_row(TARGET)).unwrap();
+        let warnings = replay_extras(home, &cli, false).unwrap();
+        assert!(warnings.iter().any(|warning| warning.contains(HISTORY)));
+        assert!(!cache.exists());
+        assert!(fs::read_to_string(&state).unwrap().contains(TARGET));
+        assert_eq!(sync_rows(&db), [selected, orphan.clone()]);
+        assert_eq!(receipts(&cli).unwrap().len(), 1);
+
+        fs::write(&history_path, &remaining).unwrap();
+        let warnings = replay_extras(home, &cli, false).unwrap();
+        assert!(warnings.iter().any(|warning| warning.contains(HISTORY)));
+        assert!(receipts(&cli).unwrap().is_empty());
+        assert!(!fs::read_to_string(&state).unwrap().contains(TARGET));
+        assert_eq!(sync_rows(&db), [orphan]);
+        assert!(cli.join(SYNC_PENDING).exists());
+        assert_eq!(fs::read_to_string(&history_path).unwrap(), remaining);
+
+        fs::write(history_path, history(&[])).unwrap();
+        assert!(replay_extras(home, &cli, false).unwrap().is_empty());
+        assert!(sync_rows(&db).is_empty());
+        assert!(!cli.join(SYNC_PENDING).exists());
+    }
+
+    #[test]
+    fn replay_preserves_a_restored_index_only_session_in_the_selected_store() {
+        let temp = tempfile::tempdir().unwrap();
+        let home = temp.path();
+        let app = home.join(".gemini/antigravity");
+        write_conversations(&app, &[TARGET, FORK]);
+        clean(
+            &app,
+            DESKTOP_INDEX,
+            &[TARGET, FORK],
+            CleanOptions {
+                cc_switch: true,
+                app_cache: false,
+            },
+            || Ok(()),
+        )
+        .unwrap();
+
+        let state = home.join(APP_DATA).join("app_storage.json");
+        fs::create_dir_all(state.parent().unwrap()).unwrap();
+        let layout = |id: &str| format!("antigravity-multi-conversation-layout-v3-{id}");
+        fs::write(
+            &state,
+            serde_json::json!({layout(TARGET): "open", layout(FORK): "open"}).to_string(),
+        )
+        .unwrap();
+        let db = sync_db(home);
+        let restored = insert_cursor(&db, &app, TARGET);
+        insert_cursor(&db, &app, FORK);
+        // A partial restore must leave the receipt pending until its index can be read
+        fs::write(app.join(DESKTOP_INDEX), [10, 255]).unwrap();
+        let warnings = replay_extras(home, &app, false).unwrap();
+        assert!(warnings
+            .iter()
+            .any(|warning| warning.contains("could not recheck deleted sessions")));
+        assert_eq!(receipts(&app).unwrap().len(), 1);
+        assert!(fs::read_to_string(&state).unwrap().contains(FORK));
+        fs::write(app.join(DESKTOP_INDEX), summary_entry(TARGET, false)).unwrap();
+        assert!(replay_extras(home, &app, false).unwrap().is_empty());
+        assert!(receipts(&app).unwrap().is_empty());
+        let saved = fs::read_to_string(&state).unwrap();
+        assert!(saved.contains(TARGET) && !saved.contains(FORK));
+        assert_eq!(sync_rows(&db), [restored]);
+    }
+
+    #[test]
+    fn replays_ledger_cleanup_and_verifies_late_cc_switch_writes() {
+        let temp = tempfile::tempdir().unwrap();
+        let home = temp.path();
+        let app = home.join(".gemini/antigravity");
+        let cli = home.join(".gemini/antigravity-cli");
+        write_conversations(&app, &[TARGET]);
+        write_conversations(&cli, &[TARGET]);
+        let cache = home.join(APP_DATA).join("Cache");
+        fs::create_dir_all(&cache).unwrap();
+        let ledger = app.join("sidecar_data/anti-power-usage/panel/data/ledger.json");
+        fs::create_dir_all(ledger.parent().unwrap()).unwrap();
+        let saved = serde_json::json!({"version":1, "sessions":{
+            TARGET: {"store":"app", "title":"private", "buckets":[{"day":"2026-11-19","model":"m","client":"app","steps":1,"cost":1.0}]},
+            FORK: {"store":"app","parentId":TARGET,"buckets":[]}
+        }, "deleted":[]});
+        fs::write(&ledger, saved.to_string()).unwrap();
+        let db = sync_db(home);
+        let app_cursor = insert_cursor(&db, &app, TARGET);
+        clean(
+            &app,
+            DESKTOP_INDEX,
+            &[TARGET],
+            CleanOptions::default(),
+            || Ok(()),
+        )
+        .unwrap();
+        assert!(replay_extras(home, &app, false).unwrap().is_empty());
+        assert!(fs::read_to_string(&ledger).unwrap().contains(TARGET));
+        assert!(cache.is_dir());
+        assert_eq!(sync_rows(&db), [app_cursor]);
+        let options = CleanOptions {
+            cc_switch: true,
+            app_cache: true,
+        };
+        clean(&cli, CLI_INDEX, &[TARGET], options, || Ok(())).unwrap();
+        insert_cursor(&db, &cli, TARGET);
+        assert_eq!(replay_extras(home, &cli, true).unwrap().len(), 1);
+        assert!(sync_rows(&db).is_empty());
+        assert!(!cache.exists());
+        assert!(receipts(&cli).unwrap().is_empty());
+        assert!(cli.join(SYNC_PENDING).is_file());
+        insert_cursor(&db, &cli, TARGET);
+        assert!(replay_extras(home, &cli, false).unwrap().is_empty());
+        assert!(sync_rows(&db).is_empty());
+        assert!(!cli.join(SYNC_PENDING).exists());
+        let text = fs::read_to_string(&ledger).unwrap();
+        assert!(!text.contains(TARGET) && !text.contains("private"));
+        let final_ledger: serde_json::Value = serde_json::from_str(&text).unwrap();
+        assert_eq!(final_ledger["deleted"][0]["steps"], 1);
+    }
+
+    #[test]
+    fn ledger_waits_for_a_known_offline_copy_until_its_database_is_deleted() {
+        let temp = tempfile::tempdir().unwrap();
+        let home = temp.path();
+        let app = home.join(".gemini/antigravity");
+        let profile = home.join(".cc-switch/agy/work/antigravity-cli");
+        write_conversations(&app, &[TARGET]);
+        write_conversations(&profile, &[TARGET]);
+        let offline = home.join("offline");
+        fs::rename(&profile, &offline).unwrap();
+        let ledger = app.join("sidecar_data/anti-power-usage/panel/data/ledger.json");
+        fs::create_dir_all(ledger.parent().unwrap()).unwrap();
+        let saved = serde_json::json!({"version":1, "sessions":{TARGET:{
+            "store":"app", "knownCopies":["app", "cc-switch:work"],
+            "missingCopies":{"app":10,"cc-switch:work":null},
+            "buckets":[{"day":"2026-11-19","model":"m","client":"app","steps":1}]
+        }}, "deleted":[]});
+        fs::write(&ledger, saved.to_string()).unwrap();
+        let options = CleanOptions::default();
+        clean(&app, DESKTOP_INDEX, &[TARGET], options, || Ok(())).unwrap();
+        assert!(replay_extras(home, &app, false).unwrap().is_empty());
+        let read =
+            || serde_json::from_slice::<serde_json::Value>(&fs::read(&ledger).unwrap()).unwrap();
+        let saved = read();
+        assert_eq!(
+            saved["sessions"][TARGET]["knownCopies"],
+            serde_json::json!(["cc-switch:work"])
+        );
+        assert_eq!(
+            saved["sessions"][TARGET]["missingCopies"],
+            serde_json::json!({"cc-switch:work":null})
+        );
+        assert_eq!(saved["deleted"], serde_json::json!([]));
+
+        fs::create_dir_all(&profile).unwrap();
+        fs::write(profile.join(CLI_INDEX), summary_entry(TARGET, false)).unwrap();
+        clean(&profile, CLI_INDEX, &[TARGET], options, || Ok(())).unwrap();
+        assert!(replay_extras(home, &profile, false).unwrap().is_empty());
+        assert_eq!(read(), saved);
+
+        fs::rename(offline.join("conversations"), profile.join("conversations")).unwrap();
+        clean(&profile, CLI_INDEX, &[TARGET], options, || Ok(())).unwrap();
+        assert!(replay_extras(home, &profile, false).unwrap().is_empty());
+        let folded = read();
+        assert!(folded["sessions"].get(TARGET).is_none());
+        assert_eq!(folded["deleted"][0]["steps"], 1);
+    }
+
+    #[test]
+    fn retries_cache_cleanup_without_rereading_the_session_indexes() {
+        let temp = tempfile::tempdir().unwrap();
+        let home = temp.path();
+        let app = home.join(".gemini/antigravity");
+        write_conversations(&app, &[TARGET]);
+        clean(
+            &app,
+            DESKTOP_INDEX,
+            &[TARGET],
+            CleanOptions {
+                cc_switch: false,
+                app_cache: true,
+            },
+            || Ok(()),
+        )
+        .unwrap();
+        let cache = home.join(APP_DATA).join("Cache");
+        fs::create_dir_all(cache.parent().unwrap()).unwrap();
+        fs::write(&cache, "not a directory").unwrap();
+        assert_eq!(replay_extras(home, &app, false).unwrap().len(), 1);
+        let receipts = receipts(&app).unwrap();
+        assert_eq!(receipts.len(), 1);
+        assert!(!fs::read_to_string(&receipts[0]).unwrap().contains(TARGET));
+
+        fs::remove_file(&cache).unwrap();
+        fs::create_dir(&cache).unwrap();
+        fs::write(app.join(DESKTOP_INDEX), [10, 255]).unwrap();
+        assert!(replay_extras(home, &app, false).unwrap().is_empty());
+        assert!(!cache.exists() && !receipts[0].exists());
     }
 
     #[test]
@@ -1462,13 +2021,19 @@ mod tests {
         let mut updated = fs::read(&path).unwrap();
         updated.extend(summary_entry("00000000-0000-4000-8000-000000000004", false));
         let checks = Cell::new(0);
-        let error = clean(root, DESKTOP_INDEX, &[TARGET], || {
-            checks.set(checks.get() + 1);
-            if checks.get() == 2 {
-                fs::write(&path, &updated)?;
-            }
-            Ok(())
-        })
+        let error = clean(
+            root,
+            DESKTOP_INDEX,
+            &[TARGET],
+            CleanOptions::default(),
+            || {
+                checks.set(checks.get() + 1);
+                if checks.get() == 2 {
+                    fs::write(&path, &updated)?;
+                }
+                Ok(())
+            },
+        )
         .unwrap_err();
 
         assert!(error.to_string().contains("Session index changed"));
@@ -1503,9 +2068,19 @@ mod tests {
                 .any(|session| session.session_id == TARGET)
         };
         assert!(target_present(CLI) && target_present(DESKTOP));
-        clean(&cli, CLI_INDEX, &[TARGET], || Ok(())).unwrap();
+        clean(&cli, CLI_INDEX, &[TARGET], CleanOptions::default(), || {
+            Ok(())
+        })
+        .unwrap();
         assert!(!target_present(CLI) && target_present(DESKTOP));
-        clean(&desktop, DESKTOP_INDEX, &[TARGET], || Ok(())).unwrap();
+        clean(
+            &desktop,
+            DESKTOP_INDEX,
+            &[TARGET],
+            CleanOptions::default(),
+            || Ok(()),
+        )
+        .unwrap();
         assert!(!target_present(CLI) && !target_present(DESKTOP));
     }
 
@@ -1513,7 +2088,14 @@ mod tests {
     fn cleans_several_sessions_in_one_pass() {
         let temp = store();
         let root = temp.path();
-        clean(root, DESKTOP_INDEX, &[TARGET, FORK], || Ok(())).unwrap();
+        clean(
+            root,
+            DESKTOP_INDEX,
+            &[TARGET, FORK],
+            CleanOptions::default(),
+            || Ok(()),
+        )
+        .unwrap();
         assert_rows(root, &[]);
         assert!(fs::read(root.join(DESKTOP_INDEX)).unwrap().is_empty());
         assert_eq!(
@@ -1542,13 +2124,15 @@ mod tests {
         };
 
         let sessions = [session(TARGET), session(FORK), session("invalid")];
-        let (results, _) = delete_with(home, &sessions, || Ok(()));
+        let (results, _) = delete_with(home, &sessions, CleanOptions::default(), || Ok(()));
         assert_eq!(results[0], None);
         assert!(results[1].as_deref().unwrap().contains("session directory"));
         assert!(results[2].is_some());
         assert_rows(&root, &[FORK]);
 
-        let (results, _) = delete_with(home, &sessions[1..2], || Err("client running".into()));
+        let (results, _) = delete_with(home, &sessions[1..2], CleanOptions::default(), || {
+            Err("client running".into())
+        });
         assert_eq!(results, [Some("client running".to_owned())]);
     }
 
@@ -1567,7 +2151,7 @@ mod tests {
         });
 
         let checks = Cell::new(0);
-        let (results, cleaned) = delete_with(home, &sessions, || {
+        let (results, cleaned) = delete_with(home, &sessions, CleanOptions::default(), || {
             checks.set(checks.get() + 1);
             Ok(())
         });
@@ -1616,7 +2200,14 @@ mod tests {
         )
         .unwrap();
 
-        clean(root, DESKTOP_INDEX, &[TARGET], || Ok(())).unwrap();
+        clean(
+            root,
+            DESKTOP_INDEX,
+            &[TARGET],
+            CleanOptions::default(),
+            || Ok(()),
+        )
+        .unwrap();
         let mut kept: Vec<_> = fs::read_dir(&events)
             .unwrap()
             .map(|entry| entry.unwrap().file_name().into_string().unwrap())
@@ -1661,6 +2252,17 @@ mod tests {
             is_cc_switch("cc-switch") && is_cc_switch("CC Switch") && is_cc_switch("cc-switch.exe")
         );
         assert!(!is_cc_switch("cc-switch-helper"));
+    }
+
+    #[test]
+    fn cc_switch_does_not_block_cleanup() {
+        let running = |clients, cc_switch| Running { clients, cc_switch }.require_closed();
+        assert!(running([false, false], true).is_ok_and(|running| running.cc_switch));
+        assert!(running([false, false], false).is_ok_and(|running| !running.cc_switch));
+        for clients in [[true, false], [false, true], [true, true]] {
+            let error = running(clients, true).err().unwrap().to_string();
+            assert!(error.starts_with("Quit ") && !error.contains("CC Switch"));
+        }
     }
 
     #[test]
@@ -1724,7 +2326,7 @@ mod tests {
             assert_eq!(rows.len(), 1);
             assert!(rows[0].session_id == TARGET && rows[0].index_only);
 
-            clean(&root, index, &[TARGET], || Ok(())).unwrap();
+            clean(&root, index, &[TARGET], CleanOptions::default(), || Ok(())).unwrap();
             assert!(scan(home.path(), provider).unwrap().is_empty());
             fs::write(root.join(index), [10, 255]).unwrap();
             assert!(scan(home.path(), provider).unwrap().is_empty());

@@ -1,0 +1,10 @@
+{
+  "name": "anti-power-usage",
+  "displayName": "Anti-Power Usage",
+  "version": "5.1.0",
+  "description": "Per-request records for Antigravity sessions: content, tokens, cache, speed, and cost.",
+  "logo": "assets/logo.svg",
+  "license": "GPL-3.0-only",
+  "repository": "https://github.com/mikessslxxx/anti-power",
+  "suggestedPrompts": []
+}

@@ -16,31 +16,63 @@ pub(super) const APP_DATA: &str = "AppData/Roaming/Antigravity";
 pub(super) const APP_DATA: &str = ".config/Antigravity";
 
 pub(super) fn roots(home: &Path, provider_id: &str) -> io::Result<Vec<PathBuf>> {
+    store_roots(home, provider_id, false)
+}
+
+pub(super) fn strict_roots(home: &Path, provider_id: &str) -> io::Result<Vec<PathBuf>> {
+    store_roots(home, provider_id, true)
+}
+
+fn store_roots(home: &Path, provider_id: &str, strict: bool) -> io::Result<Vec<PathBuf>> {
     let gemini = home.join(".gemini");
     match provider_id {
         DESKTOP => Ok(vec![gemini.join("antigravity")]),
         CLI => {
             let mut roots = vec![gemini.join("antigravity-cli")];
-            let profiles = home.join(".cc-switch").join("agy");
-            match fs::read_dir(profiles) {
-                Ok(entries) => {
-                    for entry in entries {
-                        let entry = entry?;
-                        if entry.file_type()?.is_dir() {
-                            let root = entry.path().join("antigravity-cli");
-                            if root.is_dir() {
-                                roots.push(root);
-                            }
-                        }
-                    }
+            let profiles = match resolve_path(home, Path::new(".cc-switch/agy"), true) {
+                Ok(Some(path)) => path,
+                Ok(None) => return Ok(roots),
+                Err(error) if !strict && error.kind() == io::ErrorKind::InvalidData => {
+                    return Ok(roots);
                 }
+                Err(error) => return Err(error),
+            };
+            let entries = match fs::read_dir(profiles) {
+                Ok(entries) => entries,
                 // CC Switch profiles are optional, so a missing directory is not an error
                 Err(error)
-                    if matches!(
-                        error.kind(),
-                        io::ErrorKind::NotFound | io::ErrorKind::NotADirectory
-                    ) => {}
+                    if error.kind() == io::ErrorKind::NotFound
+                        || (!strict && error.kind() == io::ErrorKind::NotADirectory) =>
+                {
+                    return Ok(roots);
+                }
                 Err(error) => return Err(error),
+            };
+            for entry in entries {
+                let entry = entry?;
+                let kind = entry.file_type()?;
+                if strict && kind.is_symlink() {
+                    return Err(io::Error::other(format!(
+                        "Cannot inspect linked profile: {}",
+                        entry.path().display()
+                    )));
+                }
+                if !kind.is_dir() {
+                    continue;
+                }
+                let root = entry.path().join("antigravity-cli");
+                match fs::symlink_metadata(&root) {
+                    Ok(meta) if meta.is_dir() => roots.push(root),
+                    Ok(_) if !strict => {}
+                    Ok(_) => {
+                        return Err(io::Error::other(format!(
+                            "Invalid profile store: {}",
+                            root.display()
+                        )));
+                    }
+                    Err(error) if !strict || error.kind() == io::ErrorKind::NotFound => {}
+                    Err(error) => return Err(error),
+                }
             }
             roots[1..].sort();
             Ok(roots)
@@ -81,8 +113,29 @@ pub(super) fn locate(
     Ok((root, id.to_owned()))
 }
 
+pub(super) fn checked_file(root: &Path, name: &str) -> io::Result<Option<PathBuf>> {
+    let path = checked_path(root, Path::new(name))?;
+    if let Some(file) = &path {
+        if !fs::symlink_metadata(file)?.is_file() {
+            return Err(io::Error::new(
+                io::ErrorKind::InvalidData,
+                format!("Expected a file at {}", file.display()),
+            ));
+        }
+    }
+    Ok(path)
+}
+
 /// Resolve a known store path without traversing symlinks
 pub(super) fn checked_path(root: &Path, relative: &Path) -> io::Result<Option<PathBuf>> {
+    resolve_path(root, relative, false)
+}
+
+fn resolve_path(
+    root: &Path,
+    relative: &Path,
+    require_directory: bool,
+) -> io::Result<Option<PathBuf>> {
     let mut path = root.to_path_buf();
     let mut components = relative.components().peekable();
     while let Some(Component::Normal(part)) = components.next() {
@@ -90,7 +143,8 @@ pub(super) fn checked_path(root: &Path, relative: &Path) -> io::Result<Option<Pa
         match fs::symlink_metadata(&path) {
             Ok(metadata)
                 if !metadata.file_type().is_symlink()
-                    && (components.peek().is_none() || metadata.is_dir()) => {}
+                    && (metadata.is_dir()
+                        || (!require_directory && components.peek().is_none())) => {}
             Ok(_) => {
                 return Err(io::Error::new(
                     io::ErrorKind::InvalidData,

@@ -10,7 +10,7 @@
         "checkFailed": "检查失败",
         "checkUpdate": "检查更新",
         "checking": "检查中…",
-        "copyright": "© 2026 Anti-Power · MIT License",
+        "copyright": "© 2026 Anti-Power · GPL-3.0 License",
         "desc": "Antigravity App 和 Antigravity CLI 的本地会话管理工具。",
         "download": "前往下载",
         "error": {
@@ -54,7 +54,7 @@
         "optionAppCache": "Antigravity App 浏览器缓存",
         "optionAppCacheHint": "清空 Antigravity App 的 Cache 和 Code Cache 目录，其中可能留有会话 ID。缓存会自动重建，下次启动稍慢。",
         "optionCcSwitch": "CC Switch 同步记录",
-        "optionCcSwitchHint": "删除 ~/.cc-switch 数据库及备份中的会话同步记录（需先退出 CC Switch），保留用量和费用历史。",
+        "optionCcSwitchHint": "删除 ~/.cc-switch 数据库及备份中所选与已不存在会话的同步记录；CC Switch 运行中也可清理，保留用量和费用历史。",
         "projectDir": "项目",
         "providers": {
             "antigravity": "Antigravity App",
@@ -100,5 +100,29 @@
         "switchLanguage": "Switch to English",
         "toggleThemeDark": "切换到深色主题",
         "toggleThemeLight": "切换到浅色主题"
+    },
+    "pluginModal": {
+        "title": "用量插件",
+        "desc": "记录每次模型请求的内容、Token、缓存、速度和费用，只读本地会话库，不上传数据。",
+        "installed": "已安装",
+        "notInstalled": "未安装",
+        "bundled": "随附版本",
+        "catalog": "价格表",
+        "location": "位置",
+        "install": "安装",
+        "upgrade": "更新到 v{version}",
+        "reinstall": "重新安装",
+        "uninstall": "卸载",
+        "updateCatalog": "更新价格表",
+        "installed_done": "已安装。",
+        "uninstalled": "已卸载。用量记录仍保留在 Antigravity 的插件数据中。",
+        "uninstallConfirm": "要卸载 Anti-Power Usage 吗？用量记录会保留，重新安装后可继续使用。",
+        "catalogUpdated": "价格表已更新，插件会自动重新计算费用。",
+        "catalogHttp": "下载价格表失败：HTTP {status}",
+        "restart": "Antigravity 正在运行，重启后改动生效。",
+        "enable": "在 Antigravity 的 Customizations → Installed 中开启插件，然后从侧边栏打开。",
+        "foreign": "该插件目录已被其他内容占用，Anti-Power 不会改动它。",
+        "missingBundle": "此 Anti-Power 构建未附带插件。",
+        "footer": "价格数据来自 antigravity-usage-monitor (GPL-3.0)。"
     }
 }
