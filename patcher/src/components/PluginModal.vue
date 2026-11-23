@@ -1,123 +1,86 @@
 <template>
-  <div v-if="show" class="modal-overlay" @click.self="$emit('close')">
-    <div class="modal" role="dialog" aria-labelledby="plugin-title">
-      <div class="modal-header">
-        <h2 id="plugin-title" class="modal-title">{{ $t('pluginModal.title') }}</h2>
-        <button class="close-btn" :aria-label="$t('sessionViewer.cancel')" @click="$emit('close')">×</button>
-      </div>
+  <AppModal v-if="show" :title="$t('pluginModal.title')" @close="$emit('close')">
+    <header class="plugin-heading">
+      <h3 class="modal-product-name">Antigravity Usage &amp; Speed Monitor</h3>
+      <i18n-t keypath="pluginModal.source" scope="global" tag="p">
+        <template #github><a :href="releaseUrl" @click.prevent="openReleasePage">GitHub</a></template>
+      </i18n-t>
+    </header>
+    <p class="plugin-desc">{{ $t('pluginModal.desc') }}</p>
 
-      <div class="modal-body">
-        <p class="plugin-desc">{{ $t('pluginModal.desc') }}</p>
+    <dl class="plugin-facts">
+      <dt>{{ $t('pluginModal.installed') }}</dt>
+      <dd>{{ status ? (status.installedVersion ? `v${status.installedVersion}` : $t('pluginModal.notInstalled')) : '—' }}</dd>
+      <dt>{{ $t('pluginModal.location') }}</dt>
+      <dd class="plugin-path" :title="status?.path">{{ status?.path ?? '—' }}</dd>
+    </dl>
 
-        <dl v-if="status" class="plugin-facts">
-          <dt>{{ $t('pluginModal.installed') }}</dt>
-          <dd>{{ status.installedVersion ? `v${status.installedVersion}` : $t('pluginModal.notInstalled') }}</dd>
-          <dt>{{ $t('pluginModal.bundled') }}</dt>
-          <dd>{{ status.bundledVersion ? `v${status.bundledVersion}` : '—' }}</dd>
-          <dt>{{ $t('pluginModal.catalog') }}</dt>
-          <dd>{{ catalogDate || '—' }}</dd>
-          <dt>{{ $t('pluginModal.location') }}</dt>
-          <dd class="plugin-path" :title="status.path">{{ status.path }}</dd>
-        </dl>
-
-        <p v-if="status?.foreign" class="plugin-note plugin-error" role="alert">{{ $t('pluginModal.foreign') }}</p>
-        <p v-else-if="status && !status.bundledVersion" class="plugin-note plugin-error" role="alert">
-          {{ $t('pluginModal.missingBundle') }}
-        </p>
-        <p v-if="statusError" class="plugin-note plugin-error" role="alert">{{ statusError }}</p>
-        <p v-if="message" class="plugin-note" :class="{ 'plugin-error': messageIsError }" role="status">{{ message }}</p>
-        <p v-if="status?.installedVersion" class="plugin-note">
-          <span v-if="status.antigravityRunning">{{ $t('pluginModal.restart') }} </span>
-          {{ $t('pluginModal.enable') }}
-        </p>
-
-        <div v-if="status?.macosLauncher" class="launch-option">
-          <button class="about-btn" :disabled="busy" @click="launch">{{ $t('pluginModal.launch') }}</button>
-          <p class="plugin-note">{{ $t('pluginModal.launchHint') }}</p>
-        </div>
-
-        <label v-if="canInstall && status?.cliOptIn" class="cli-choice">
-          <input v-model="replaceCli" type="checkbox" :disabled="busy">
-          {{ $t('pluginModal.replaceCli') }}
-        </label>
-        <div class="plugin-actions">
-          <button class="primary-btn" :disabled="busy || !canInstall" @click="install">{{ installLabel }}</button>
-          <template v-if="status?.installedVersion">
-            <button class="about-btn" :disabled="busy" @click="updateCatalog">
-              {{ $t('pluginModal.updateCatalog') }}
-            </button>
-            <button class="about-btn" :disabled="busy" @click="uninstall">
-              {{ $t('pluginModal.uninstall') }}
-            </button>
-          </template>
-        </div>
-      </div>
-
-      <div class="modal-footer">
-        <p>{{ $t('pluginModal.footer') }}</p>
-      </div>
+    <div aria-live="polite" class="plugin-feedback">
+      <p v-if="status?.foreign" class="plugin-note plugin-error">{{ $t('pluginModal.foreign') }}</p>
+      <p v-if="statusError" class="plugin-note plugin-error">{{ statusError }}</p>
+      <p v-if="message" class="plugin-note" :class="{ 'plugin-error': messageIsError }">{{ message }}</p>
+      <p v-if="status?.installedVersion && !messageIsError" class="plugin-note">{{ $t('pluginModal.enable') }}</p>
     </div>
-  </div>
+
+    <template #footer>
+      <div class="plugin-actions">
+        <button v-if="showLauncher" class="about-btn" :disabled="!canLaunch" @click="launch">
+          {{ $t('pluginModal.launch') }}
+        </button>
+        <button v-if="!status?.installedVersion" class="primary-btn" :disabled="busy || !status || status.foreign" @click="install">
+          {{ $t('pluginModal.install') }}
+        </button>
+        <button v-else class="about-btn" :disabled="busy" @click="uninstall">
+          {{ $t('pluginModal.uninstall') }}
+        </button>
+      </div>
+    </template>
+  </AppModal>
 </template>
 
 <script setup lang="ts">
 import { computed, ref, watch } from 'vue';
+import AppModal from './AppModal.vue';
 import { invoke } from '@tauri-apps/api/core';
 import { ask } from '@tauri-apps/plugin-dialog';
 import { useI18n } from 'vue-i18n';
 
 interface PluginStatus {
   path: string;
-  bundledVersion: string | null;
   installedVersion: string | null;
-  foreign: boolean;
-  bundledCatalog: string | null;
-  installedCatalog: string | null;
-  downloadedCatalog: string | null;
-  antigravityRunning: boolean;
   macosLauncher: boolean;
-  cliOptIn: boolean;
+  foreign: boolean;
+  savedFolder: string | null;
 }
-
-// Prices are maintained upstream by antigravity-usage-monitor
-const CATALOG_URL =
-  'https://raw.githubusercontent.com/yuhuan-dev/antigravity-usage-monitor/main/pricing-catalog.json';
 
 const props = defineProps<{ show: boolean }>();
 defineEmits(['close']);
 const { t } = useI18n();
+const releaseUrl = 'https://github.com/yuhuan-dev/antigravity-usage-monitor/releases/latest';
 
 const status = ref<PluginStatus | null>(null);
 const statusError = ref('');
 const loading = ref(false);
 const changing = ref(false);
-const replaceCli = ref(false);
 const busy = computed(() => loading.value || changing.value);
+const showLauncher = computed(() => status.value?.macosLauncher ?? navigator.platform.toLowerCase().includes('mac'));
+const canLaunch = computed(() => !busy.value && !!status.value?.macosLauncher && !!status.value.installedVersion && !status.value.foreign);
 const message = ref('');
 const messageIsError = ref(false);
 let statusRequest = 0;
 
-const canInstall = computed(() => Boolean(status.value?.bundledVersion && !status.value.foreign));
-const installLabel = computed(() => {
-  const s = status.value;
-  if (!s?.installedVersion) return t('pluginModal.install');
-  if (s.installedVersion !== s.bundledVersion) {
-    return t('pluginModal.upgrade', { version: s.bundledVersion ?? '' });
-  }
-  return t('pluginModal.reinstall');
-});
-// The plugin uses whichever catalog was updated last
-const catalogDate = computed(() => {
-  const s = status.value;
-  const dates = [s?.installedVersion ? s.installedCatalog : s?.bundledCatalog, s?.downloadedCatalog]
-    .map((date) => Date.parse(date ?? ''))
-    .filter(Number.isFinite);
-  return dates.length ? new Date(Math.max(...dates)).toLocaleDateString() : '';
-});
-
 function report(text: string, isError = false) {
   message.value = text;
   messageIsError.value = isError;
+}
+
+async function openReleasePage() {
+  try {
+    const { openUrl } = await import('@tauri-apps/plugin-opener');
+    await openUrl(releaseUrl);
+  } catch (error) {
+    report(String(error), true);
+  }
 }
 
 async function refreshStatus() {
@@ -135,7 +98,7 @@ async function refreshStatus() {
   }
 }
 
-async function run(action: () => Promise<PluginStatus | undefined>, done: string) {
+async function run(action: () => Promise<PluginStatus | undefined>, done = '') {
   if (busy.value) return;
   changing.value = true;
   report('');
@@ -147,7 +110,7 @@ async function run(action: () => Promise<PluginStatus | undefined>, done: string
     loading.value = false;
     statusError.value = '';
     status.value = current;
-    report(done);
+    report(current.savedFolder ? t('pluginModal.savedFolder', { path: current.savedFolder }) : done);
   } catch (error) {
     report(String(error), true);
     await refreshStatus();
@@ -160,7 +123,6 @@ watch(
   () => props.show,
   (show) => {
     if (!show) return;
-    replaceCli.value = false;
     report('');
     void refreshStatus();
   },
@@ -168,22 +130,21 @@ watch(
 );
 
 async function launch() {
-  if (busy.value) return;
+  if (!canLaunch.value) return;
   changing.value = true;
   try {
     const started = await invoke<boolean>('launch_antigravity');
     report(t(started ? 'pluginModal.launched' : 'pluginModal.quitFirst'));
   } catch (error) {
     report(String(error), true);
+    await refreshStatus();
   } finally {
     changing.value = false;
   }
 }
 
 function install() {
-  return run(() => invoke<PluginStatus>('install_plugin', {
-    replaceCli: Boolean(status.value?.cliOptIn && replaceCli.value),
-  }), t('pluginModal.installed_done'));
+  return run(() => invoke<PluginStatus>('install_plugin'));
 }
 
 function uninstall() {
@@ -196,87 +157,37 @@ function uninstall() {
   }, t('pluginModal.uninstalled'));
 }
 
-function updateCatalog() {
-  return run(async () => {
-    const res = await fetch(CATALOG_URL, { cache: 'no-store' });
-    if (!res.ok) throw new Error(t('pluginModal.catalogHttp', { status: res.status }));
-    return invoke<PluginStatus>('update_plugin_catalog', { catalog: await res.text() });
-  }, t('pluginModal.catalogUpdated'));
-}
 </script>
 
 <style scoped>
-.modal-overlay {
-  position: fixed;
-  inset: 0;
-  background: rgba(0, 0, 0, 0.7);
-  backdrop-filter: blur(8px) saturate(150%);
-  -webkit-backdrop-filter: blur(8px) saturate(150%);
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  z-index: 100;
+.plugin-heading {
+  margin: 2px 0 14px;
+  text-align: center;
 }
 
-.modal {
-  background: var(--ag-surface);
-  border: 1px solid var(--ag-border);
-  border-radius: var(--radius-xl);
-  width: 440px;
-  max-width: 92%;
-  box-shadow: var(--ag-shadow-xl);
-  overflow: hidden;
-}
-
-.modal-header {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  padding: 16px 20px;
-  border-bottom: 1px solid var(--ag-border);
-}
-
-.modal-title {
-  font-size: 15px;
-  font-weight: 600;
+.plugin-heading p {
   margin: 0;
-  color: var(--ag-text-strong);
+  font-size: 12px;
+  color: var(--ag-text-secondary);
 }
 
-.close-btn {
-  background: none;
-  border: none;
-  color: var(--ag-text-tertiary);
-  font-size: 20px;
-  cursor: pointer;
-  width: 30px;
-  height: 30px;
-  border-radius: var(--radius-sm);
-}
-
-.close-btn:hover {
-  color: var(--ag-text);
-  background: rgba(255, 255, 255, 0.08);
-}
-
-.launch-option .plugin-note { margin: 5px 0 12px; }
-
-.modal-body {
-  padding: 18px 20px 20px;
+.plugin-heading a {
+  color: var(--ag-accent);
+  text-underline-offset: 2px;
 }
 
 .plugin-desc {
   font-size: 12px;
   color: var(--ag-text-secondary);
   line-height: 1.6;
-  margin: 0 0 14px;
+  margin: 0 0 10px;
 }
 
 .plugin-facts {
   display: grid;
   grid-template-columns: auto 1fr;
   gap: 6px 14px;
-  margin: 0 0 14px;
+  margin: 0 0 10px;
   font-size: 12px;
 }
 
@@ -291,34 +202,35 @@ function updateCatalog() {
 }
 
 .plugin-path {
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
+  overflow-wrap: anywhere;
   font-family: ui-monospace, monospace;
   font-size: 11px;
 }
 
 .plugin-note {
+  overflow-wrap: anywhere;
   font-size: 12px;
   color: var(--ag-text-secondary);
-  margin: 0 0 12px;
+  margin: 0;
   line-height: 1.5;
 }
+
+.plugin-feedback .plugin-note + .plugin-note { margin-top: 4px; }
 
 .plugin-error {
   color: var(--ag-error);
 }
 
-.cli-choice { display: flex; align-items: center; gap: 8px; margin-bottom: 10px; font-size: 12px; }
 
 .plugin-actions {
   display: flex;
-  flex-wrap: wrap;
   gap: 8px;
 }
 
+.plugin-actions button { min-width: 70px; }
+
 .about-btn {
-  padding: 9px 16px;
+  padding: 9px 12px;
   background: var(--ag-surface-2);
   border: 1px solid var(--ag-border);
   border-radius: var(--radius-md);
@@ -334,7 +246,7 @@ function updateCatalog() {
 }
 
 .primary-btn {
-  padding: 9px 18px;
+  padding: 9px 12px;
   background: var(--ag-accent-gradient);
   border: none;
   border-radius: var(--radius-md);
@@ -354,14 +266,4 @@ function updateCatalog() {
   cursor: not-allowed;
 }
 
-.modal-footer {
-  padding: 12px 20px;
-  border-top: 1px solid var(--ag-border);
-}
-
-.modal-footer p {
-  font-size: 10px;
-  color: var(--ag-text-muted);
-  margin: 0;
-}
 </style>

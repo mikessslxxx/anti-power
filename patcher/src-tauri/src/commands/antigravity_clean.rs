@@ -3,7 +3,8 @@ use super::antigravity_store::{
     checked_file, checked_path, locate, roots, valid_id, CLI, DESKTOP, INDEX_DB, METADATA,
 };
 use super::cleanup_extras::{self, Cleaned};
-use super::sessions::{CleanOptions, DeleteReport, SessionRef};
+use super::sessions::{CleanOptions, DeleteReport, RecoveryStatus, SessionRef};
+use super::usage_monitor::{self, CacheCleanup};
 use rusqlite::{Connection, OpenFlags, OptionalExtension, TransactionBehavior};
 use serde::{Deserialize, Serialize};
 use std::collections::{BTreeMap, BTreeSet};
@@ -55,11 +56,11 @@ enum Client {
 /// Delete sessions and clean related external app data
 pub(super) fn delete(home: &Path, sessions: &[SessionRef], options: CleanOptions) -> DeleteReport {
     let (errors, cleaned_roots) = delete_with(home, sessions, options, require_clients_closed);
-    let mut warnings = Vec::new();
+    let mut recovery = RecoveryStatus::default();
     for root in cleaned_roots {
-        warnings.extend(recover_store(home, &root));
+        recover_store(home, &root, &mut recovery);
     }
-    DeleteReport { errors, warnings }
+    DeleteReport { errors, recovery }
 }
 
 fn delete_with(
@@ -160,13 +161,6 @@ impl Running {
     }
 }
 
-/// Whether an Antigravity client runs, for changes that apply after it restarts
-pub(super) fn antigravity_running() -> std::result::Result<bool, String> {
-    running_clients()
-        .map(|running| running.clients.contains(&true))
-        .map_err(|error| error.to_string())
-}
-
 fn require_clients_closed() -> Result<()> {
     running_clients()?.require_closed().map(drop)
 }
@@ -251,16 +245,14 @@ fn clean(
 }
 
 /// Finish or undo interrupted cleanups and name the stores that still need attention
-pub(super) fn recover_pending(home: &Path, provider_id: &str) -> Vec<String> {
-    let mut warnings = Vec::new();
+pub(super) fn recover_pending(home: &Path, provider_id: &str, recovery: &mut RecoveryStatus) {
     for root in roots(home, provider_id).unwrap_or_default() {
         let relative = root.strip_prefix(home).unwrap_or(&root);
         let Ok(Some(root)) = checked_path(home, relative) else {
             continue;
         };
-        warnings.extend(recover_store(home, &root));
+        recover_store(home, &root, recovery);
     }
-    warnings
 }
 
 #[derive(Serialize, Deserialize)]
@@ -270,6 +262,16 @@ struct Receipt {
     #[serde(default, skip_serializing_if = "BTreeSet::is_empty")]
     deleted_databases: BTreeSet<PathBuf>,
     options: CleanOptions,
+}
+
+impl Receipt {
+    fn read(path: &Path) -> Result<Self> {
+        let receipt: Self = serde_json::from_reader(File::open(path)?)?;
+        if !receipt.ids.iter().all(|id| valid_id(id)) {
+            return Err("Invalid session ID in cleanup receipt".into());
+        }
+        Ok(receipt)
+    }
 }
 
 fn receipts(root: &Path) -> Result<Vec<PathBuf>> {
@@ -289,27 +291,70 @@ fn receipts(root: &Path) -> Result<Vec<PathBuf>> {
     Ok(paths)
 }
 
-fn recover_store(home: &Path, root: &Path) -> Vec<String> {
-    let recover = || -> Result<Vec<String>> {
-        let stages = !recovery_dirs(root)?.is_empty();
-        if !stages && receipts(root)?.is_empty() && checked_file(root, SYNC_PENDING)?.is_none() {
-            return Ok(Vec::new());
+fn recover_store(home: &Path, root: &Path, recovery: &mut RecoveryStatus) {
+    match recover_store_with(home, root, running_clients) {
+        Ok(status) => {
+            recovery.warnings.extend(status.warnings);
+            recovery.cc_switch_verification_pending |= status.cc_switch_verification_pending;
+            recovery.usage_monitor_cleanup_pending |= status.usage_monitor_cleanup_pending;
         }
-        let running = running_clients()?.require_closed()?;
-        with_store_lock(root, |locked| {
-            if !recovery_dirs(locked)?.is_empty() {
-                let connection = open_index(locked)?;
-                recover_locked(locked, connection.as_ref())?;
-                compact(connection.as_ref());
-            }
-            replay_extras(home, root, running.cc_switch)
-        })
-    };
-    recover().unwrap_or_else(|error| vec![format!("{}: {error}", root.display())])
+        Err(error) => recovery
+            .warnings
+            .push(format!("{}: {error}", root.display())),
+    }
 }
 
-fn replay_extras(home: &Path, root: &Path, cc_running: bool) -> Result<Vec<String>> {
+fn recover_store_with(
+    home: &Path,
+    root: &Path,
+    clients: fn() -> Result<Running>,
+) -> Result<RecoveryStatus> {
+    let stages = recovery_dirs(root)?;
+    let pending_receipts = receipts(root)?;
+    let sync_pending = checked_file(root, SYNC_PENDING)?.is_some();
+    if stages.is_empty() && pending_receipts.is_empty() && !sync_pending {
+        return Ok(RecoveryStatus::default());
+    }
+    let running = match clients()?.require_closed() {
+        Ok(running) => running,
+        Err(error) if stages.is_empty() => {
+            // Pure cache and sync follow-ups can wait for the clients to close
+            for path in &pending_receipts {
+                let receipt = Receipt::read(path)?;
+                if !receipt.local_done
+                    || !receipt.options.usage_monitor
+                    || receipt.options.app_cache
+                    || receipt.options.cc_switch
+                {
+                    return Err(error);
+                }
+            }
+            return Ok(RecoveryStatus {
+                cc_switch_verification_pending: sync_pending,
+                usage_monitor_cleanup_pending: !pending_receipts.is_empty(),
+                ..Default::default()
+            });
+        }
+        Err(error) => return Err(error),
+    };
+    with_store_lock(root, |locked| {
+        if !recovery_dirs(locked)?.is_empty() {
+            let connection = open_index(locked)?;
+            recover_locked(locked, connection.as_ref())?;
+            compact(connection.as_ref());
+        }
+        replay_extras(home, root, running.cc_switch, usage_monitor::writer_running)
+    })
+}
+
+fn replay_extras(
+    home: &Path,
+    root: &Path,
+    cc_running: bool,
+    monitor_running: fn() -> Result<bool>,
+) -> Result<RecoveryStatus> {
     let mut warnings = Vec::new();
+    let mut monitor_pending = false;
     let pending = root.join(SYNC_PENDING);
     let mut verify = checked_file(root, SYNC_PENDING)?.is_some();
     let mut swept = false;
@@ -320,13 +365,12 @@ fn replay_extras(home: &Path, root: &Path, cc_running: bool) -> Result<Vec<Strin
         CLI
     };
     for path in receipts {
-        let mut receipt: Receipt = serde_json::from_reader(File::open(&path)?)?;
-        if !receipt.ids.iter().all(|id| valid_id(id)) {
-            return Err("Invalid session ID in cleanup receipt".into());
-        }
+        let mut receipt = Receipt::read(&path)?;
         // Recheck the store on replay in case the user has restored a backup
         let mut can_clean_targets = true;
-        if !receipt.ids.is_empty() && (!receipt.local_done || receipt.options.cc_switch) {
+        if !receipt.ids.is_empty()
+            && (!receipt.local_done || receipt.options.cc_switch || receipt.options.usage_monitor)
+        {
             match live_ids(home, root, provider, Some(&receipt.ids)) {
                 Ok(live) => receipt
                     .ids
@@ -357,6 +401,13 @@ fn replay_extras(home: &Path, root: &Path, cc_running: bool) -> Result<Vec<Strin
             receipt.options.app_cache = !errors.is_empty();
             warnings.extend(errors);
         }
+        if receipt.options.usage_monitor && can_clean_targets {
+            match usage_monitor::clean(home, &group, monitor_running) {
+                Ok(CacheCleanup::Complete) => receipt.options.usage_monitor = false,
+                Ok(CacheCleanup::Pending) => monitor_pending = true,
+                Err(error) => warnings.push(format!("Usage Monitor: {error}")),
+            }
+        }
         if can_clean_targets && receipt.options.cc_switch {
             // An in-flight import may write a cursor after our transaction
             if cc_running && !verify {
@@ -377,10 +428,17 @@ fn replay_extras(home: &Path, root: &Path, cc_running: bool) -> Result<Vec<Strin
             }
             warnings.extend(result.warnings);
         }
-        if receipt.local_done && !receipt.options.app_cache && !receipt.options.cc_switch {
+        if receipt.local_done
+            && !receipt.options.app_cache
+            && !receipt.options.cc_switch
+            && !receipt.options.usage_monitor
+        {
             fs::remove_file(path)?;
         } else {
-            receipt.ids = if receipt.local_done && !receipt.options.cc_switch {
+            receipt.ids = if receipt.local_done
+                && !receipt.options.cc_switch
+                && !receipt.options.usage_monitor
+            {
                 BTreeSet::new()
             } else {
                 group.ids
@@ -399,12 +457,11 @@ fn replay_extras(home: &Path, root: &Path, cc_running: bool) -> Result<Vec<Strin
         }
         warnings.extend(errors);
     }
-    if verify && cc_running {
-        warnings.push(
-            "CC Switch sync cleanup is pending verification. Refresh after CC Switch exits.".into(),
-        );
-    }
-    Ok(warnings)
+    Ok(RecoveryStatus {
+        warnings,
+        cc_switch_verification_pending: verify && cc_running,
+        usage_monitor_cleanup_pending: monitor_pending,
+    })
 }
 
 fn store_lock_file(root: &Path) -> Result<File> {
@@ -768,6 +825,7 @@ fn sidecar_file(relative: &Path) -> Option<SidecarFile> {
     };
     match (folder, name) {
         ("events", name) if name.ends_with(".json") => Some(SidecarFile::Event),
+        // Accept cache replacements in recovery journals from earlier releases
         ("data", "trajectory_usage_cache.json") => Some(SidecarFile::UsageCache),
         ("logs", "sidecar.log") => Some(SidecarFile::Log),
         _ => None,
@@ -802,7 +860,8 @@ fn sidecar_changes(
 ) -> Result<()> {
     for plugin in entries(&root.join(SIDECAR), true)? {
         for panel in entries(&plugin, true)? {
-            for folder in ["events", "data", "logs"] {
+            // Usage caches are handled after commit, once every session store has been checked
+            for folder in ["events", "logs"] {
                 for path in entries(&panel.join(folder), false)? {
                     let Some(kind) = sidecar_file(path.strip_prefix(root)?) else {
                         continue;
@@ -815,7 +874,7 @@ fn sidecar_changes(
                             }
                             continue;
                         }
-                        SidecarFile::UsageCache => filtered_keys(&original, ids)?,
+                        SidecarFile::UsageCache => continue,
                         SidecarFile::Log => filtered_lines(&original, ids),
                     };
                     if let Some(filtered) = filtered {
@@ -844,18 +903,6 @@ fn event_conversation(bytes: &[u8]) -> Option<String> {
         return None;
     }
     metadata["rootConversationId"].as_str().map(str::to_owned)
-}
-
-// Plugin caches in an unknown format are left alone instead of blocking cleanup
-fn filtered_keys(bytes: &[u8], ids: &BTreeSet<String>) -> Result<Option<Vec<u8>>> {
-    let Ok(mut value) = serde_json::from_slice::<serde_json::Map<_, _>>(bytes) else {
-        return Ok(None);
-    };
-    let count = value.len();
-    value.retain(|id, _| !ids.contains(id));
-    Ok((value.len() != count)
-        .then(|| serde_json::to_vec(&value))
-        .transpose()?)
 }
 
 fn filtered_lines(bytes: &[u8], ids: &BTreeSet<String>) -> Option<Vec<u8>> {
@@ -1303,6 +1350,10 @@ mod tests {
         entry
     }
 
+    fn replay_extras(home: &Path, root: &Path, cc_running: bool) -> Result<Vec<String>> {
+        super::replay_extras(home, root, cc_running, || Ok(false)).map(|status| status.warnings)
+    }
+
     fn store() -> tempfile::TempDir {
         let temp = tempfile::tempdir().unwrap();
         let root = temp.path();
@@ -1727,6 +1778,7 @@ mod tests {
             &[TARGET],
             CleanOptions {
                 cc_switch: true,
+                usage_monitor: false,
                 app_cache: false,
             },
             || Ok(()),
@@ -1784,6 +1836,7 @@ mod tests {
             &[TARGET],
             CleanOptions {
                 cc_switch: true,
+                usage_monitor: false,
                 app_cache: true,
             },
             || Ok(()),
@@ -1827,6 +1880,7 @@ mod tests {
             &[TARGET, FORK],
             CleanOptions {
                 cc_switch: true,
+                usage_monitor: false,
                 app_cache: false,
             },
             || Ok(()),
@@ -1893,11 +1947,13 @@ mod tests {
         assert_eq!(sync_rows(&db), [app_cursor]);
         let options = CleanOptions {
             cc_switch: true,
+            usage_monitor: false,
             app_cache: true,
         };
         clean(&cli, CLI_INDEX, &[TARGET], options, || Ok(())).unwrap();
         insert_cursor(&db, &cli, TARGET);
-        assert_eq!(replay_extras(home, &cli, true).unwrap().len(), 1);
+        let deferred = super::replay_extras(home, &cli, true, || Ok(false)).unwrap();
+        assert!(deferred.cc_switch_verification_pending && deferred.warnings.is_empty());
         assert!(sync_rows(&db).is_empty());
         assert!(!cache.exists());
         assert!(receipts(&cli).unwrap().is_empty());
@@ -1972,6 +2028,7 @@ mod tests {
             &[TARGET],
             CleanOptions {
                 cc_switch: false,
+                usage_monitor: false,
                 app_cache: true,
             },
             || Ok(()),
@@ -2216,13 +2273,139 @@ mod tests {
         assert_eq!(kept, ["fork.json", "other.json", "unknown.json"]);
         assert_eq!(
             fs::read_to_string(cache).unwrap(),
-            format!(r#"{{"{FORK}":{{}}}}"#)
+            format!(r#"{{"{TARGET}":{{"title":"Target"}},"{FORK}":{{}}}}"#)
         );
         assert_eq!(
             fs::read_to_string(log).unwrap(),
             format!("start\nloading {FORK}\n")
         );
         assert!(recovery_dirs(root).unwrap().is_empty());
+    }
+
+    #[test]
+    fn optional_monitor_cleanup_sweeps_orphans_and_keeps_other_profiles_and_accounting() {
+        use serde_json::{json, Value};
+        let temp = tempfile::tempdir().unwrap();
+        let home = temp.path();
+        let app = home.join(".gemini/antigravity");
+        let cli = home.join(".gemini/antigravity-cli");
+        let profile = home.join(".cc-switch/agy/work/antigravity-cli");
+        write_conversations(&cli, &[TARGET]);
+        write_conversations(&profile, &[FORK]);
+        let data = app.join("sidecar_data/usage-monitor/panel/data");
+        fs::create_dir_all(&data).unwrap();
+        let cache = data.join("trajectory_usage_cache.json");
+        let session = json!({"title":"original title","diskMtimeMs":1,"appSource":"cli",
+            "steps":[{"modelKey":"M", "cacheReadTokens":45, "inputTokens":7,"turnPrompt":"original prompt"}]});
+        let original = json!({TARGET:session, FORK:session, NESTED:session});
+        fs::write(&cache, serde_json::to_vec(&original).unwrap()).unwrap();
+        let quota = data.join("cli-status-snapshot.json");
+        fs::write(&quota, b"unchanged quota snapshot").unwrap();
+
+        clean(
+            &cli,
+            CLI_INDEX,
+            &[TARGET],
+            CleanOptions {
+                usage_monitor: true,
+                ..Default::default()
+            },
+            || Ok(()),
+        )
+        .unwrap();
+        assert_eq!(
+            serde_json::from_slice::<Value>(&fs::read(&cache).unwrap()).unwrap(),
+            original
+        );
+
+        // An unreadable store postpones the sweep; refresh replays the same receipt
+        fs::write(
+            profile.join("conversation_summaries.db"),
+            b"unreadable database",
+        )
+        .unwrap();
+        assert!(!replay_extras(home, &cli, false).unwrap().is_empty());
+        assert!(!receipts(&cli).unwrap().is_empty());
+        assert_eq!(
+            serde_json::from_slice::<Value>(&fs::read(&cache).unwrap()).unwrap(),
+            original
+        );
+        fs::remove_file(profile.join("conversation_summaries.db")).unwrap();
+        let busy = super::replay_extras(home, &cli, false, || Ok(true)).unwrap();
+        assert!(busy.usage_monitor_cleanup_pending && busy.warnings.is_empty());
+        assert!(!cli
+            .join("conversations")
+            .join(format!("{TARGET}.db"))
+            .exists());
+        assert!(!receipts(&cli).unwrap().is_empty());
+        assert_eq!(
+            serde_json::from_slice::<Value>(&fs::read(&cache).unwrap()).unwrap(),
+            original
+        );
+        let warnings = replay_extras(home, &cli, false).unwrap();
+        assert!(warnings.is_empty(), "{warnings:?}");
+        assert!(receipts(&cli).unwrap().is_empty());
+        let after: Value = serde_json::from_slice(&fs::read(&cache).unwrap()).unwrap();
+        assert_eq!(after[FORK], session);
+        for id in [TARGET, NESTED] {
+            assert_ne!(after[id]["title"], session["title"]);
+            assert_eq!(
+                after[id]["steps"][0],
+                json!({"modelKey":"M","cacheReadTokens":45,"inputTokens":7})
+            );
+        }
+        assert_eq!(fs::read(quota).unwrap(), b"unchanged quota snapshot");
+    }
+
+    #[test]
+    fn monitor_can_flush_new_usage_after_deletion_before_refresh() {
+        use serde_json::{json, Value};
+        let temp = tempfile::tempdir().unwrap();
+        let home = temp.path();
+        let cli = home.join(".gemini/antigravity-cli");
+        write_conversations(&cli, &[TARGET]);
+        clean(
+            &cli,
+            CLI_INDEX,
+            &[TARGET],
+            CleanOptions {
+                usage_monitor: true,
+                ..Default::default()
+            },
+            || Ok(()),
+        )
+        .unwrap();
+
+        // The standalone writer has not created the cache file yet
+        let busy = super::replay_extras(home, &cli, false, || Ok(true)).unwrap();
+        assert!(busy.usage_monitor_cleanup_pending && busy.warnings.is_empty());
+        assert_eq!(receipts(&cli).unwrap().len(), 1);
+        let reopened = recover_store_with(home, &cli, || {
+            Ok(Running {
+                clients: [true, false],
+                cc_switch: false,
+            })
+        })
+        .unwrap();
+        assert!(reopened.usage_monitor_cleanup_pending && reopened.warnings.is_empty());
+
+        let data = cli.join("sidecar_data/usage-monitor/panel/data");
+        fs::create_dir_all(&data).unwrap();
+        let cache = data.join("trajectory_usage_cache.json");
+        let step = json!({"modelKey":"M", "inputTokens":70, "outputTokens":12, "cost":0.05});
+        let mut original = json!({TARGET:{"title":"private title","steps":[step]}});
+        original[TARGET]["steps"][0]["turnPrompt"] = json!("private prompt");
+        fs::write(&cache, serde_json::to_vec(&original).unwrap()).unwrap();
+        let failed =
+            super::replay_extras(home, &cli, false, || Err("process check failed".into())).unwrap();
+        assert!(!failed.usage_monitor_cleanup_pending && !failed.warnings.is_empty());
+        assert_eq!(receipts(&cli).unwrap().len(), 1);
+        let done = super::replay_extras(home, &cli, false, || Ok(false)).unwrap();
+        assert!(!done.usage_monitor_cleanup_pending && done.warnings.is_empty());
+        assert!(receipts(&cli).unwrap().is_empty());
+        let after: Value = serde_json::from_slice(&fs::read(cache).unwrap()).unwrap();
+        assert_ne!(after[TARGET]["title"], original[TARGET]["title"]);
+        assert_eq!(after[TARGET]["steps"][0], step);
     }
 
     #[test]
@@ -2252,6 +2435,31 @@ mod tests {
             is_cc_switch("cc-switch") && is_cc_switch("CC Switch") && is_cc_switch("cc-switch.exe")
         );
         assert!(!is_cc_switch("cc-switch-helper"));
+    }
+
+    #[test]
+    fn sync_marker_alone_is_a_notice_while_clients_are_open() {
+        let temp = tempfile::tempdir().unwrap();
+        let home = temp.path();
+        let root = home.join(".gemini/antigravity");
+        fs::create_dir_all(&root).unwrap();
+        let running = || {
+            Ok(Running {
+                clients: [true, false],
+                cc_switch: false,
+            })
+        };
+        assert!(
+            !recover_store_with(home, &root, running)
+                .unwrap()
+                .cc_switch_verification_pending
+        );
+        fs::write(root.join(SYNC_PENDING), []).unwrap();
+        let deferred = recover_store_with(home, &root, running).unwrap();
+        assert!(deferred.cc_switch_verification_pending && deferred.warnings.is_empty());
+        assert!(root.join(SYNC_PENDING).is_file());
+        fs::write(root.join(format!("{RECEIPT_PREFIX}123456789012")), []).unwrap();
+        assert!(recover_store_with(home, &root, running).is_err());
     }
 
     #[test]

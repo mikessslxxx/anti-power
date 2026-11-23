@@ -24,11 +24,21 @@ pub struct SessionMeta {
     pub index_only: bool,
 }
 
+/// Expected follow-up work is reported separately from recovery failures
+#[derive(Debug, Default, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct RecoveryStatus {
+    pub warnings: Vec<String>,
+    pub cc_switch_verification_pending: bool,
+    pub usage_monitor_cleanup_pending: bool,
+}
+
 /// Scan results, with the stores whose interrupted cleanup could not be recovered
 #[derive(Debug, Serialize)]
 pub struct SessionList {
     pub sessions: Vec<SessionMeta>,
-    pub warnings: Vec<String>,
+    #[serde(flatten)]
+    pub recovery: RecoveryStatus,
 }
 
 /// A session selected for deletion
@@ -46,6 +56,8 @@ pub struct SessionRef {
 pub struct CleanOptions {
     /// Remove session sync records from CC Switch and its backups
     pub cc_switch: bool,
+    /// Clear deleted conversation details in the Usage Monitor cache
+    pub usage_monitor: bool,
     /// Empty the Antigravity App's Chromium caches
     pub app_cache: bool,
 }
@@ -54,7 +66,8 @@ pub struct CleanOptions {
 #[derive(Debug, Serialize)]
 pub struct DeleteReport {
     pub errors: Vec<Option<String>>,
-    pub warnings: Vec<String>,
+    #[serde(flatten)]
+    pub recovery: RecoveryStatus,
 }
 
 /// A single session message
@@ -75,13 +88,13 @@ fn home_dir() -> Result<PathBuf, String> {
 pub fn scan_sessions() -> Result<SessionList, String> {
     let home = home_dir()?;
     let mut sessions = Vec::new();
-    let mut warnings = Vec::new();
+    let mut recovery = RecoveryStatus::default();
     for provider in [DESKTOP, CLI] {
-        warnings.append(&mut antigravity_clean::recover_pending(&home, provider));
+        antigravity_clean::recover_pending(&home, provider, &mut recovery);
         sessions.append(&mut antigravity_scan::scan(&home, provider)?);
     }
     sessions.sort_by_key(|session| Reverse(session.last_active_at));
-    Ok(SessionList { sessions, warnings })
+    Ok(SessionList { sessions, recovery })
 }
 
 /// Load a session's messages on demand

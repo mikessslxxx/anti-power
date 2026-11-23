@@ -1,0 +1,27 @@
+[
+  {
+    "path": "app.js",
+    "before": "return\\s*\\{\\s*el:\\s*shellEl\\s*,",
+    "code": "@panel"
+  },
+  {
+    "path": "shared/window-bridge-protocol.mjs",
+    "after": "BRIDGE_API_ROUTE_DEFS\\s*=\\s*Object\\.freeze\\(\\s*\\[",
+    "code": "Object.freeze({ path: '/api/open-anti-power', method: 'POST', action: 'open_anti_power' }),"
+  },
+  {
+    "path": "main.mjs",
+    "before": "const\\s+out\\s*=\\s*await\\s+forwardApiCall\\(pathname,",
+    "code": "if (pathname === '/api/open-anti-power') {\n    const { openTarget } = await import('./anti-power/adapter.mjs');\n    const reply = await openTarget(data, method === 'POST' && Boolean(process.env.ANTIGRAVITY_SIDECAR_UI_TOKEN?.trim()));\n    return new Response(reply.body, { status: reply.status, contentType: reply.contentType });\n  }"
+  },
+  {
+    "path": "backend/api-actions.mjs",
+    "before": "case ['\"]telemetry['\"]\\s*:",
+    "code": "case 'open_anti_power': {\n      const { openTarget } = await import('../anti-power/adapter.mjs');\n      return openTarget(data, opts?.endpointId === 'local');\n    }"
+  },
+  {
+    "path": "backend/plugin-updater.mjs",
+    "before": "await\\s+verifyPluginJsSyntax\\(extractedRoot\\)",
+    "code": "await (await import('../anti-power/adapter.mjs')).prepareUpdate(extractedRoot);"
+  }
+]

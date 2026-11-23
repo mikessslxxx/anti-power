@@ -1,42 +1,43 @@
 {
     "app": {
         "error": {
-            "unknown": "Unknown Error"
+            "unknown": "Unknown error"
         },
         "title": "Anti-Power",
         "version": "Version v{version}"
     },
     "aboutModal": {
-        "checkFailed": "Check Failed",
-        "checkUpdate": "Check Update",
+        "checkFailed": "Check failed",
+        "checkUpdate": "Check for updates",
         "checking": "Checking...",
         "copyright": "© 2026 Anti-Power · GPL-3.0 License",
-        "desc": "A local session manager for the Antigravity App and Antigravity CLI.",
+        "desc": "Local session manager for the Antigravity App and Antigravity CLI",
         "download": "Download",
         "error": {
             "checkUpdate": "Failed to check for updates"
         },
         "latest": "✓ Up to date",
-        "networkError": "Network Error",
-        "newVersion": "New Version Found: v{version}",
-        "repo": "GitHub Repo",
+        "networkError": "Network error",
+        "newVersion": "New version available: v{version}",
+        "repo": "GitHub",
         "title": "About"
     },
     "sessionViewer": {
         "batchDelete": "Delete selected",
-        "batchDeleteConfirmMessage": "Permanently delete {count} selected session records from their local sources, including known message data, logs, and index entries? Sessions in use cannot be deleted. This cannot be undone.",
+        "batchDeleteConfirmMessage": "Permanently delete {count} selected sessions from their sources? This cannot be undone.",
         "cancel": "Cancel",
         "cleanOptions": "Also clean when deleting:",
         "confirmAppCache": "Also empty the Antigravity App's browser cache.",
         "confirmCcSwitch": "Also remove matching sync records from CC Switch and its backups (usage history is kept).",
+        "confirmUsageMonitor": "Also clean Usage Monitor records for sessions with no local copy left. Usage and cost history is kept.",
         "confirmDelete": "Delete permanently",
         "confirmFailed": "Could not open the deletion confirmation: {error}",
         "copied": "Copied",
         "copyMessage": "Copy message",
-        "deleteConfirmMessage": "Permanently delete the known message data, logs, and index entries for “{name}” from this local source?\n{path}\n\nSessions in use cannot be deleted. This cannot be undone.",
+        "deleteConfirmMessage": "Permanently delete \"{name}\" from this source?\n{path}\n\nThis cannot be undone.",
         "deleteConfirmTitle": "Confirm permanent deletion",
         "deleteFailed": "{name}: {error}",
-        "deleteOtherSources": "This session ID also has records in other sources. To remove it from CC Switch after a refresh, search for its ID under All sources and delete all matching records together.",
+        "deleteOtherSources": "Other sources also have this session ID. To keep CC Switch from listing it again, search by ID under All sources and delete all matches.",
         "deleteResult": "{deleted} deleted, {failed} failed",
         "deleteSession": "Delete session",
         "deleteWarnings": "Some related data could not be cleaned:",
@@ -44,7 +45,7 @@
         "filterAll": "All sources",
         "filterLabel": "Session source",
         "indexOnly": "Index only",
-        "indexOnlyHint": "This source has only index entries for this session; its files are gone or are stored in another source. Delete it to stop other tools from listing it here.",
+        "indexOnlyHint": "Only index entries remain in this source (files are gone or in another source). Delete it to clear the leftover entry.",
         "loadFailed": "Could not load messages: {error}",
         "loadingMessages": "Loading messages...",
         "messageCount": "{count} message | {count} messages",
@@ -54,7 +55,9 @@
         "optionAppCache": "Antigravity App browser cache",
         "optionAppCacheHint": "Empty the Antigravity App's Cache and Code Cache folders, which can hold session IDs. They are rebuilt automatically, so the next launch is a little slower.",
         "optionCcSwitch": "CC Switch sync records",
-        "optionCcSwitchHint": "Remove sync records for selected and missing sessions from ~/.cc-switch and its backups. Works while CC Switch is running; usage and cost history is kept.",
+        "optionCcSwitchHint": "Remove sync records from ~/.cc-switch and its backups for selected sessions and sessions with no trace left in their source. CC Switch can stay open; usage and cost history is kept.",
+        "optionUsageMonitor": "Usage Monitor session history",
+        "optionUsageMonitorHint": "Clear titles and prompts for sessions with no local copy left, keeping token counts and costs. Removes the entry when the installed plugin has a matching independent usage record.",
         "projectDir": "Project",
         "providers": {
             "antigravity": "Antigravity App",
@@ -64,6 +67,8 @@
             "antigravity": "App",
             "agy": "CLI"
         },
+        "ccSwitchVerificationPending": "CC Switch sync records are awaiting verification. Quit CC Switch and any running Antigravity clients, then select Refresh.",
+        "usageMonitorCleanupPending": "Usage Monitor cache cleanup is pending. Quit standalone Usage Monitor and any running Antigravity clients, then select Refresh.",
         "recoveryPending": "These stores have an interrupted cleanup that could not be recovered. If the Antigravity App or Antigravity CLI is running, quit both and refresh:",
         "refresh": "Refresh",
         "roles": {
@@ -102,32 +107,21 @@
         "toggleThemeLight": "Switch to light theme"
     },
     "pluginModal": {
-        "title": "Usage plugin",
-        "desc": "Records content, tokens, cache, speed, and cost for each model request without uploading data.",
-        "installed": "Installed",
+        "title": "Usage Monitor",
+        "source": "Latest release from {github}",
+        "desc": "Track speed and cache hit rate per request, token usage and cost by model, and remaining 5-hour and weekly quotas by model pool.",
+        "installed": "Installation",
         "notInstalled": "Not installed",
-        "bundled": "Bundled",
-        "catalog": "Price catalog",
         "location": "Location",
-        "install": "Install",
-        "upgrade": "Update to v{version}",
-        "reinstall": "Reinstall",
         "uninstall": "Uninstall",
-        "replaceCli": "Switch the Antigravity CLI status line to Anti-Power on install",
         "launch": "Launch Antigravity with debugging",
-        "launchHint": "For desktop overlays (random loopback port); the side panel and CLI work without it.",
-        "launched": "Launching Antigravity.",
-        "quitFirst": "Save your work and quit Antigravity with ⌘Q, then click Launch.",
-        "updateCatalog": "Update prices",
-        "installed_done": "Installed.",
-        "uninstalled": "Uninstalled. Usage history stays in Antigravity's plugin data.",
-        "uninstallConfirm": "Uninstall Anti-Power Usage? Usage history is kept and comes back if you reinstall.",
-        "catalogUpdated": "Prices updated. The plugin recalculates costs on its own.",
-        "catalogHttp": "Could not download prices: HTTP {status}",
-        "restart": "Antigravity is running. Restart it for the change to take effect.",
+        "launched": "Launching Antigravity",
+        "quitFirst": "Save your work, quit Antigravity with ⌘Q, and try again.",
         "enable": "Turn the plugin on under Customizations → Installed in Antigravity, then open it from the side panel.",
         "foreign": "The plugin folder is occupied by something else, so Anti-Power leaves it alone.",
-        "missingBundle": "This Anti-Power build does not include the plugin.",
-        "footer": "Prices come from antigravity-usage-monitor (GPL-3.0)."
+        "install": "Install",
+        "uninstallConfirm": "Uninstall Usage Monitor? Settings and usage history in Antigravity's data directory will be kept.",
+        "savedFolder": "Uninstalled. Your checkout or local plugin data was saved at {path}.",
+        "uninstalled": "Usage Monitor uninstalled"
     }
 }

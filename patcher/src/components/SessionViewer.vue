@@ -14,26 +14,44 @@
             {{ sourceLabel(provider) }}
           </option>
         </select>
+        <input
+          v-model="searchQuery"
+          type="search"
+          :placeholder="$t('sessionViewer.searchPlaceholder')"
+          :aria-label="$t('sessionViewer.searchLabel')"
+          :disabled="deletionPending"
+          class="sv-search-input"
+        />
         <button class="sv-refresh-btn" :disabled="actionsBusy" @click="scanSessions">
           {{ $t('sessionViewer.refresh') }}
         </button>
       </div>
     </div>
 
-    <div class="sv-options">
+    <div ref="optionsRow" class="sv-options">
       <span>{{ $t('sessionViewer.cleanOptions') }}</span>
+      <label class="sv-select-all" :title="$t('sessionViewer.optionAppCacheHint')">
+        <input v-model="cleanOptions.appCache" type="checkbox" :disabled="actionsBusy" />
+        <span>{{ $t('sessionViewer.optionAppCache') }}</span>
+      </label>
       <label class="sv-select-all" :title="$t('sessionViewer.optionCcSwitchHint')">
         <input v-model="cleanOptions.ccSwitch" type="checkbox" :disabled="actionsBusy" />
         <span>{{ $t('sessionViewer.optionCcSwitch') }}</span>
       </label>
-      <label class="sv-select-all" :title="$t('sessionViewer.optionAppCacheHint')">
-        <input v-model="cleanOptions.appCache" type="checkbox" :disabled="actionsBusy" />
-        <span>{{ $t('sessionViewer.optionAppCache') }}</span>
+      <label class="sv-select-all" :title="$t('sessionViewer.optionUsageMonitorHint')">
+        <input v-model="cleanOptions.usageMonitor" type="checkbox" :disabled="actionsBusy" />
+        <span>{{ $t('sessionViewer.optionUsageMonitor') }}</span>
       </label>
     </div>
 
     <div v-if="scanError" class="sv-feedback sv-error" role="alert">
       {{ $t('sessionViewer.scanFailed', { error: scanError }) }}
+    </div>
+    <div v-if="ccSwitchVerificationPending" class="sv-feedback sv-notice" role="status">
+      {{ $t('sessionViewer.ccSwitchVerificationPending') }}
+    </div>
+    <div v-if="usageMonitorCleanupPending" class="sv-feedback sv-notice" role="status">
+      {{ $t('sessionViewer.usageMonitorCleanupPending') }}
     </div>
     <div v-if="scanWarnings.length" class="sv-feedback sv-error" role="alert">
       <div>{{ $t('sessionViewer.recoveryPending') }}</div>
@@ -67,17 +85,7 @@
 
     <div class="sv-body">
       <div class="sv-list-pane" :aria-busy="isScanning">
-        <div class="sv-search">
-          <input
-            v-model="searchQuery"
-            type="search"
-            :placeholder="$t('sessionViewer.searchPlaceholder')"
-            :aria-label="$t('sessionViewer.searchLabel')"
-            :disabled="deletionPending"
-            class="sv-search-input"
-          />
-        </div>
-        <div class="sv-list-meta">
+        <div class="sv-list-meta" :style="{ minHeight: optionsHeight }">
           <span class="sv-count">{{ $t('sessionViewer.sessionCount', { count: filteredSessions.length }) }}</span>
           <label v-if="filteredSessions.length" class="sv-select-all">
             <input type="checkbox" :checked="isAllChecked" :disabled="actionsBusy" @change="toggleAllChecked" />
@@ -209,6 +217,7 @@
 <script setup lang="ts">
 import { computed, onMounted, onUnmounted, ref, watch } from 'vue';
 import { invoke } from '@tauri-apps/api/core';
+import type { SessionTarget } from '../navigation';
 import { ask } from '@tauri-apps/plugin-dialog';
 import { useI18n } from 'vue-i18n';
 
@@ -245,16 +254,18 @@ interface DeleteResult {
 
 interface CleanOptions {
   ccSwitch: boolean;
+  usageMonitor: boolean;
   appCache: boolean;
 }
 
 const CLEAN_OPTIONS_KEY = 'anti-power-clean-options';
 
 function loadCleanOptions(): CleanOptions {
-  const options: CleanOptions = { ccSwitch: false, appCache: false };
+  const options: CleanOptions = { ccSwitch: false, usageMonitor: false, appCache: false };
   try {
     const saved = JSON.parse(localStorage.getItem(CLEAN_OPTIONS_KEY) ?? '{}');
     options.ccSwitch = saved?.ccSwitch === true;
+    options.usageMonitor = saved?.usageMonitor === true;
     options.appCache = saved?.appCache === true;
   } catch {
     // Keep defaults
@@ -289,6 +300,8 @@ const deletionPending = ref(false);
 const isDeleting = ref(false);
 const scanError = ref('');
 const scanWarnings = ref<string[]>([]);
+const ccSwitchVerificationPending = ref(false);
+const usageMonitorCleanupPending = ref(false);
 const messageError = ref('');
 const confirmationError = ref('');
 const deleteResult = ref<DeleteResult | null>(null);
@@ -336,8 +349,28 @@ watch([filterProvider, searchQuery], () => {
   }
 }, { flush: 'sync' });
 
-onMounted(() => void scanSessions());
+let pendingSession: SessionTarget | null = null;
+
+function openSession(target: SessionTarget) {
+  pendingSession = target;
+  void scanSessions();
+}
+
+defineExpose({ openSession });
+const optionsRow = ref<HTMLElement | null>(null);
+const optionsHeight = ref<string>();
+let rowObserver: ResizeObserver | undefined;
+onMounted(() => {
+  if (optionsRow.value) {
+    rowObserver = new ResizeObserver(([entry]) => {
+      optionsHeight.value = entry.target.getBoundingClientRect().height + 'px';
+    });
+    rowObserver.observe(optionsRow.value, { box: 'border-box' });
+  }
+  void scanSessions();
+});
 onUnmounted(() => {
+  rowObserver?.disconnect();
   detailRequest++;
   clearTimeout(copyTimer);
 });
@@ -357,15 +390,35 @@ async function scanSessions() {
   void refreshVersions();
   scanError.value = '';
   try {
-    const result = await invoke<{ sessions: SessionMeta[]; warnings: string[] }>('scan_sessions');
+    const result = await invoke<{
+      sessions: SessionMeta[];
+      warnings: string[];
+      ccSwitchVerificationPending: boolean;
+      usageMonitorCleanupPending: boolean;
+    }>('scan_sessions');
     sessions.value = result.sessions;
     scanWarnings.value = result.warnings;
+    ccSwitchVerificationPending.value = result.ccSwitchVerificationPending;
+    usageMonitorCleanupPending.value = result.usageMonitorCleanupPending;
 
     const byKey = new Map(sessions.value.map(session => [sessionKey(session), session]));
     for (const key of checkedSessions.value) {
       if (!byKey.has(key)) checkedSessions.value.delete(key);
     }
-    if (selectedKey.value) {
+    const target = pendingSession;
+    if (target) {
+      pendingSession = null;
+      filterProvider.value = target.provider ?? '';
+      searchQuery.value = target.id;
+      const matches = filteredSessions.value.filter(row => row.sessionId.toLowerCase() === target.id);
+      const fullCopies = matches.filter(row => !row.indexOnly);
+      const candidates = fullCopies.length ? fullCopies : matches;
+      const match = target.profile
+        ? matches.find(row => row.sourcePath.split('\\').join('/').endsWith(
+            '/.cc-switch/agy/' + target.profile + '/antigravity-cli/conversations/' + row.sessionId + '.db'))
+        : candidates.length === 1 ? candidates[0] : undefined;
+      void selectSession(match ?? null);
+    } else if (selectedKey.value) {
       void selectSession(byKey.get(selectedKey.value) ?? null);
     }
   } catch (error) {
@@ -496,8 +549,9 @@ async function deleteSessions(targets: SessionMeta[], message: string) {
   try {
     const options = { ...cleanOptions.value };
     const extras = [
-      options.ccSwitch && t('sessionViewer.confirmCcSwitch'),
       options.appCache && t('sessionViewer.confirmAppCache'),
+      options.ccSwitch && t('sessionViewer.confirmCcSwitch'),
+      options.usageMonitor && t('sessionViewer.confirmUsageMonitor'),
     ].filter(Boolean);
     let confirmed: boolean;
     try {
@@ -521,10 +575,16 @@ async function deleteSessions(targets: SessionMeta[], message: string) {
     let errors: (string | null)[];
     let warnings: string[] = [];
     try {
-      ({ errors, warnings } = await invoke<{ errors: (string | null)[]; warnings: string[] }>('delete_sessions', {
+      const result = await invoke<{
+        errors: (string | null)[];
+        warnings: string[];
+        usageMonitorCleanupPending: boolean;
+      }>('delete_sessions', {
         sessions: targets.map(({ providerId, sourcePath, sessionId }) => ({ providerId, sourcePath, sessionId })),
         options,
-      }));
+      });
+      ({ errors, warnings } = result);
+      usageMonitorCleanupPending.value ||= result.usageMonitorCleanupPending;
     } catch (error) {
       errors = targets.map(() => errorMessage(error));
     }
@@ -584,12 +644,15 @@ async function deleteSessions(targets: SessionMeta[], message: string) {
 }
 
 .sv-header-actions {
-  display: flex;
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 174px)) max-content;
+  max-width: 100%;
   align-items: center;
   gap: 10px;
 }
 
 .sv-filter-select,
+.sv-search-input,
 .sv-refresh-btn {
   height: 30px;
   background-color: var(--ag-surface-2);
@@ -599,8 +662,18 @@ async function deleteSessions(targets: SessionMeta[], message: string) {
   font-size: 12px;
   line-height: 1;
   padding: 0 10px;
-  cursor: pointer;
   outline: none;
+}
+
+.sv-filter-select,
+.sv-search-input {
+  width: 100%;
+  min-width: 0;
+}
+
+.sv-filter-select,
+.sv-refresh-btn {
+  cursor: pointer;
 }
 
 /* Drop the native control so the filter matches the button beside it */
@@ -616,6 +689,7 @@ async function deleteSessions(targets: SessionMeta[], message: string) {
   background-repeat: no-repeat;
 }
 
+.sv-search-input:focus,
 .sv-filter-select:focus,
 .sv-filter-select:hover:not(:disabled),
 .sv-refresh-btn:hover:not(:disabled) {
@@ -639,16 +713,23 @@ async function deleteSessions(targets: SessionMeta[], message: string) {
   cursor: not-allowed;
 }
 
-.sv-options {
+.sv-options,
+.sv-list-meta {
   display: flex;
   align-items: center;
   flex-wrap: wrap;
   gap: 4px 12px;
+  min-height: 31px;
   padding: 6px 16px;
   border-bottom: 1px solid var(--ag-border);
   font-size: 11px;
   color: var(--ag-text-tertiary);
   flex-shrink: 0;
+}
+
+.sv-list-meta {
+  justify-content: space-between;
+  padding-inline: 12px;
 }
 
 .sv-feedback {
@@ -667,6 +748,11 @@ async function deleteSessions(targets: SessionMeta[], message: string) {
   list-style: disc;
   padding-left: 20px;
   margin: 4px 0 0;
+}
+
+.sv-notice {
+  background: var(--ag-surface-2);
+  color: var(--ag-text-secondary);
 }
 
 .sv-error {
@@ -692,37 +778,8 @@ async function deleteSessions(targets: SessionMeta[], message: string) {
   flex-shrink: 0;
 }
 
-.sv-search {
-  padding: 10px 12px;
-  border-bottom: 1px solid var(--ag-border);
-}
-
-.sv-search-input {
-  width: 100%;
-  background: var(--ag-surface-2);
-  border: 1px solid var(--ag-border);
-  border-radius: var(--radius-sm);
-  color: var(--ag-text);
-  font-size: 12px;
-  padding: 7px 10px;
-  outline: none;
-  box-sizing: border-box;
-}
-
-.sv-search-input:focus {
-  border-color: var(--ag-accent);
-}
-
 .sv-search-input::placeholder {
   color: var(--ag-text-muted);
-}
-
-.sv-list-meta {
-  padding: 6px 12px;
-  border-bottom: 1px solid var(--ag-border);
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
 }
 
 .sv-select-all {

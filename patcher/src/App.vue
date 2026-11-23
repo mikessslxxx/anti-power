@@ -1,5 +1,8 @@
 <script setup lang="ts">
-import { ref } from "vue";
+import { onMounted, onUnmounted, ref } from "vue";
+import { invoke } from "@tauri-apps/api/core";
+import { listen, type UnlistenFn } from "@tauri-apps/api/event";
+import { parseNavigation } from "./navigation";
 import { version } from "../package.json";
 import TitleBar from "./components/TitleBar.vue";
 import AboutModal from "./components/AboutModal.vue";
@@ -10,6 +13,34 @@ import FlowBackground from "./components/FlowBackground.vue";
 const GITHUB_URL = "https://github.com/mikessslxxx/anti-power";
 const showAbout = ref(false);
 const showPlugin = ref(false);
+const viewer = ref<InstanceType<typeof SessionViewer> | null>(null);
+let unlisten: UnlistenFn | undefined;
+let disposed = false;
+
+function navigate(urls: string[]) {
+  for (const url of urls) {
+    const target = parseNavigation(url);
+    if (!target) continue;
+    showAbout.value = false;
+    showPlugin.value = target.kind === "plugins";
+    if (target.kind === "session") viewer.value?.openSession(target);
+  }
+}
+
+onMounted(async () => {
+  let received = false;
+  unlisten = await listen<string[]>("deep-link://new-url", ({ payload }) => {
+    received = true;
+    navigate(payload);
+  });
+  if (disposed) return unlisten();
+  const initial = await invoke<string[] | null>("plugin:deep-link|get_current");
+  if (!disposed && !received && initial) navigate(initial);
+});
+onUnmounted(() => {
+  disposed = true;
+  unlisten?.();
+});
 </script>
 
 <template>
@@ -18,7 +49,7 @@ const showPlugin = ref(false);
     <TitleBar :title="$t('app.title')" @openAbout="showAbout = true" @openPlugin="showPlugin = true" />
 
     <main class="app-container">
-      <SessionViewer />
+      <SessionViewer ref="viewer" />
     </main>
 
     <AboutModal

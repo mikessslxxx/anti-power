@@ -7,20 +7,21 @@
 | `patcher/package.json` | `version` (界面显示的版本号取自这里) |
 | `patcher/src-tauri/tauri.conf.json` | `version` |
 | `patcher/src-tauri/Cargo.toml` | `version` |
-| `plugin/plugin.json`, `plugin/sidecars/panel/package.json` | `version` |
 | `README.md`, `README_EN.md` | 版本徽章, 已核对的 Antigravity App 和 Antigravity CLI 版本 |
 | `CHANGELOG.md`, `CHANGELOG_EN.md` | 新版本记录 |
-| `release-notes.md` | 本次发布说明 |
+| `release-notes.md` | 本次发布说明 (复用当期中英文更新日志) |
 
 改完版本号后在 `patcher/` 运行 `npm install`, 在 `patcher/src-tauri/` 运行 `cargo check`, 让两个 lock 文件同步.
 
 ## 发布流程
 
 1. 按上表同步版本号, 在 `release-notes.md` 写好发布说明.
-2. 提交并推送标签:
+2. 在仓库根目录核对并提交本次发布的改动, 然后推送标签:
 
 ```bash
-git commit -am "release: vX.Y.Z"
+git add -A -- .
+git diff --cached --stat
+git commit -m "release: vX.Y.Z"
 git tag vX.Y.Z
 git push origin master vX.Y.Z
 ```

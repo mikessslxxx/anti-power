@@ -1,6 +1,6 @@
 //! Anti-Power Usage ledger: move removed sessions into its anonymous deleted totals
 //!
-//! Mirrors `foldSession` in `plugin/sidecars/panel/lib/ledger.mjs`
+//! Compatibility with ledgers written by the former bundled plugin
 
 use super::antigravity_clean::{conversation_db_id, store_read_lock, STAGE_PREFIX};
 use super::antigravity_store::{checked_file, checked_path, strict_roots, CLI, DESKTOP};
@@ -470,10 +470,8 @@ mod tests {
         fs::create_dir_all(&copies).unwrap();
         fs::write(copies.join(format!("{COPIED}.db")), "fixture").unwrap();
 
-        let fixture: Value = serde_json::from_str(include_str!(
-            "../../../../plugin/sidecars/panel/test/fixtures/ledger-fold.json"
-        ))
-        .unwrap();
+        let fixture: Value =
+            serde_json::from_str(include_str!("../../tests/fixtures/ledger-fold.json")).unwrap();
         let path = data.join(LEDGER);
         fs::write(&path, fixture["input"].to_string()).unwrap();
         let cleaned = Cleaned {
@@ -506,19 +504,22 @@ mod tests {
         let ledger = serde_json::json!({"version":1, "sessions":{ GONE: {"store":"app","buckets":[{"day":"2026-11-18","model":"carbon","client":"app","steps":1,"cost":0.5}]} }, "deleted":[]});
         fs::write(&file, ledger.to_string()).unwrap();
         let script = r#"
-            import { writeSync } from 'node:fs';
-            import { withLedgerLock, loadLedger, saveLedger } from './lib/ledger.mjs';
+            import { readFileSync, renameSync, writeFileSync, writeSync } from 'node:fs';
+            import { DatabaseSync } from 'node:sqlite';
             const [file, id] = process.argv.slice(1);
-            withLedgerLock(file, () => {
-              const latest = loadLedger(file);
-              writeSync(1, 'locked\n');
-              Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, 300);
-              latest.sessions[id].buckets[0].steps = 2;
-              saveLedger(file, latest);
-            });
+            const lock = new DatabaseSync(file + '.lock');
+            lock.exec('BEGIN IMMEDIATE');
+            const latest = JSON.parse(readFileSync(file, 'utf8'));
+            writeSync(1, 'locked\n');
+            Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, 300);
+            latest.sessions[id].buckets[0].steps = 2;
+            writeFileSync(file + '.pending', JSON.stringify(latest));
+            renameSync(file + '.pending', file);
+            lock.exec('COMMIT');
+            lock.close();
         "#;
         let mut node = Command::new("node")
-            .current_dir(Path::new(env!("CARGO_MANIFEST_DIR")).join("../../plugin/sidecars/panel"))
+            .current_dir(home)
             .args(["--input-type=module", "-e", script])
             .arg(&file)
             .arg(GONE)

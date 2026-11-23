@@ -5,7 +5,7 @@
 <h1 align="center">Anti-Power</h1>
 
 <p align="center">
-  <a href="https://github.com/mikessslxxx/anti-power/releases"><img src="https://img.shields.io/badge/版本-v5.2.1-blue.svg" alt="版本"></a>
+  <a href="https://github.com/mikessslxxx/anti-power/releases"><img src="https://img.shields.io/badge/版本-v5.3.0-blue.svg" alt="版本"></a>
   <img src="https://img.shields.io/badge/Antigravity_App-2.34.0-green.svg" alt="Antigravity App">
   <img src="https://img.shields.io/badge/Antigravity_CLI-1.5.14-green.svg" alt="Antigravity CLI">
 </p>
@@ -14,7 +14,7 @@
   中文 | <a href="README_EN.md">English</a>
 </p>
 
-> 查看并清理 **Antigravity App** 和 **Antigravity CLI** (`agy`) 的本地会话, 并附带一个记录每次请求用量的 Antigravity 插件.
+> 查看和清理 **Antigravity App** 和 **Antigravity CLI** (`agy`) 的本地会话, 支持安装 Usage Monitor.
 
 ## 功能
 
@@ -39,22 +39,23 @@
 | `cache/last_conversations.json`, `cache/conversation_metadata.json` | 最近会话和摘要缓存 |
 | `history.jsonl` | Antigravity CLI 输入历史中属于该会话的条目 |
 | `sidecar_data/<插件>/<面板>/events/*.json` | 插件 sidecar 事件 |
-| `sidecar_data/<插件>/<面板>/` 下的 `data/trajectory_usage_cache.json`, `logs/sidecar.log` | Usage Monitor 缓存条目和相关日志行 |
+| `sidecar_data/<插件>/<面板>/logs/sidecar.log` | 已删会话的日志行 |
 | Antigravity App 数据目录的 `app_storage.json` | 窗口布局和侧栏状态 |
-| `sidecar_data/anti-power-usage/` 下的 `ledger.json` | 用量插件中该会话的合计, 并入匿名的 "已删除会话" |
+| `sidecar_data/anti-power-usage/` 下的 `ledger.json` | 旧版 Anti-Power Usage 中该会话的合计, 并入匿名的 "已删除会话" |
 
 - 子代理会话随所属会话一起删除, `/fork` 出的会话独立保留.
 - 同一 ID 可能同时出现在 Antigravity App 和 Antigravity CLI 中, 两边分别显示; 若要一并清除, 需分别勾选.
 - Antigravity App 数据目录在 macOS 上是 `~/Library/Application Support/Antigravity`, Windows 上是 `%APPDATA%\Antigravity`, Linux 上是 `~/.config/Antigravity`.
 - 不清理运行日志 (`log/`), 也不清理写到 `/tmp` 或项目目录里的文件.
-- 清理后会压缩 `conversation_summaries.db`, 库内不留已删记录的片段; 若此时有其他工具正在读取该库, 压缩会被跳过, 片段会留到下次清理. 被删除的文件本身不做磁盘级擦除.
+- 清理后会压缩 `conversation_summaries.db` 以清除已删记录碎片 (若正被其他工具读取则延至下次清理); 已删文件不做磁盘级擦除.
 
-界面上方有两个默认关闭的可选项, 勾选状态会被记住:
+界面上方有三个默认关闭的可选项, 勾选状态会被记住:
 
-- **CC Switch 同步记录**: 从 `~/.cc-switch/` 下的 `cc-switch.db` 及 `backups/*.db` 中删除所选会话及存储中已无痕迹会话的同步进度 (`session_log_sync`), 并压缩数据库. CC Switch 运行中也可清理 (此时跳过主库压缩, 退出 CC Switch 后刷新一次即可完成复查). 用量和费用历史 (`proxy_request_logs`, `session_usage_dedup`, `usage_daily_rollups`) 会保留; 它们只含会话 ID, 模型和 token 用量, 不含对话内容.
 - **Antigravity App 浏览器缓存**: 清空 Antigravity App 数据目录下的 `Cache/` 和 `Code Cache/`. 这两个目录无法按会话过滤, 可能留有会话 ID; Antigravity App 会自动重建, 下次启动稍慢.
+- **CC Switch 同步记录**: 从 `~/.cc-switch/` 的 `cc-switch.db` 及 `backups/*.db` 中删除所选会话及在对应来源中已无痕迹会话的同步进度 (`session_log_sync`), 并压缩数据库 (CC Switch 运行时跳过主库压缩, 退出后刷新即可复查). 不含对话正文的用量与费用历史会保留.
+- **Usage Monitor 会话记录**: 清除已无本地副本的 App 和 CLI 会话缓存的标题与提问, 保留用量和费用历史; 已安装的插件具备匹配的独立用量记录时移除原对话条目, 否则保留脱敏占位行. 独立运行的 Usage Monitor 可保持打开 (本地会话照常删除, 退出 Usage Monitor 后刷新即可完成缓存清理).
 
-应用数据目录和 CC Switch 的清理在会话删除提交后执行; 若失败, 会话不会回滚, 结果中会列出未清理项.
+应用数据目录, CC Switch 和 Usage Monitor 的清理在会话删除提交后执行; 若失败, 会话不会回滚, 结果中会列出未清理项.
 
 删除前须退出 Antigravity App 和 Antigravity CLI; Antigravity IDE 运行时同样会拒绝清理. 删除无法撤销.
 
@@ -62,21 +63,13 @@
 
 ## 用量插件
 
-Anti-Power 附带 Antigravity 插件 **Anti-Power Usage**, 记录每次模型请求:
+通过标题栏的 **Usage Monitor** 按钮可将 [Usage Monitor 最新正式版](https://github.com/yuhuan-dev/antigravity-usage-monitor/releases/latest) 安装到 `~/.gemini/config/plugins/usage-monitor` 或卸载. 在 Antigravity 的 **Customizations → Installed** 中启用后即可查看缓存命中率和账号额度. 价格和 CLI 状态栏由插件自身管理 (若启用了 CLI 状态栏, 卸载前请先在插件内关闭).
 
-- 用户消息, 模型回复, 思考过程和工具调用
-- 新输入, 缓存读取, 输出和思考 token, 缓存命中率
-- 首字延迟, 请求耗时和输出速度
-- 按模型价格估算的费用; 没有价格的模型标为 "待定", 不计入费用合计
-- 按今天, 7 天, 30 天或自定义区间汇总, 按日期, 模型, 来源和会话拆分
+安装时会为官方插件添加两个 Anti-Power 按钮: 面板顶栏打开当前本地会话, 设置页打开 **Usage Monitor** 弹窗. 插件通过内置 ZIP 更新时会重新应用按钮补丁.
 
-点击标题栏的用量插件按钮即可安装, 更新或卸载, 然后在 Antigravity App 的 **Customizations → Installed** 中开启, 从侧边栏打开. 插件进程启动时及之后每 10 秒采集一次, 关闭面板期间也会采集. 插件只读本地会话库, 不调用 Language Server, 也不上传数据; 对话内容在打开会话时现读, 不另存.
+macOS 用户可先退出 Antigravity, 再在 **Usage Monitor** 弹窗点击 **启动 Antigravity 并启用挂载**, 使用顶栏或输入框中的用量胶囊.
 
-侧栏顶部显示当前会话的请求速度, 首字延迟和上下文占比. 展开可查看已用 token, 窗口上限和用量构成. Antigravity CLI 状态栏也可独立显示这三项指标, 例如 `48.8 t/s | 4.4s | ◎ 19%`.
-
-macOS 和 Linux 安装插件时会为已有 CLI 配置状态栏 (已有其他配置或已关闭时可勾选替换, 卸载时还原). macOS 如需在窗口右上角挂载这三项指标 (收起侧栏后仍会更新), 退出 App 后在插件弹窗点击 **启动 Antigravity 并启用挂载**.
-
-会话的所有本地副本删除后, 已记录用量会并入匿名的 "已删除会话" (外部移走文件约 60 秒后确认归并). 价格表来自 [antigravity-usage-monitor](https://github.com/yuhuan-dev/antigravity-usage-monitor), 可在 Anti-Power 的插件弹窗中更新; 需要配额监控可改用该插件.
+如果之前用 v5.1–5.2 安装过 Anti-Power Usage, 可先在旧版中卸载它并还原 CLI 状态栏. 原账本保留在本机, Usage Monitor 不会导入.
 
 ## 安装和运行
 
@@ -118,5 +111,3 @@ Google Antigravity 已内置 LaTeX 和 Mermaid 渲染, 补丁功能已移除. [v
 ## 许可证
 
 [GPL-3.0](LICENSE). v5.0.1 及更早版本以 MIT 许可发布, 相应声明保留在 [LICENSE-MIT](LICENSE-MIT).
-
-`plugin/` 中的部分代码改编自 [antigravity-usage-monitor](https://github.com/yuhuan-dev/antigravity-usage-monitor) (GPL-3.0), 详见 [plugin/NOTICE.md](plugin/NOTICE.md).

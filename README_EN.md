@@ -5,7 +5,7 @@
 <h1 align="center">Anti-Power</h1>
 
 <p align="center">
-  <a href="https://github.com/mikessslxxx/anti-power/releases"><img src="https://img.shields.io/badge/Version-v5.2.1-blue.svg" alt="Version"></a>
+  <a href="https://github.com/mikessslxxx/anti-power/releases"><img src="https://img.shields.io/badge/Version-v5.3.0-blue.svg" alt="Version"></a>
   <img src="https://img.shields.io/badge/Antigravity_App-2.34.0-green.svg" alt="Antigravity App">
   <img src="https://img.shields.io/badge/Antigravity_CLI-1.5.14-green.svg" alt="Antigravity CLI">
 </p>
@@ -14,7 +14,7 @@
   <a href="README.md">中文</a> | English
 </p>
 
-> Browse and remove local sessions for the **Antigravity App** and **Antigravity CLI** (`agy`), with an Antigravity plugin that records usage for each request.
+> Browse and clean local **Antigravity App** and **Antigravity CLI** (`agy`) sessions, and install Usage Monitor.
 
 ## Features
 
@@ -39,22 +39,23 @@ Each deletion is scoped to a single source and session ID. After cleanup, tools 
 | `cache/last_conversations.json`, `cache/conversation_metadata.json` | Recent sessions and cached summaries |
 | `history.jsonl` | Session entries in the Antigravity CLI prompt history |
 | `sidecar_data/<plugin>/<panel>/events/*.json` | Plugin sidecar events |
-| `data/trajectory_usage_cache.json`, `logs/sidecar.log` under `sidecar_data/<plugin>/<panel>/` | Usage Monitor cache entry and matching log lines |
+| `sidecar_data/<plugin>/<panel>/logs/sidecar.log` | Log lines for the deleted session |
 | `app_storage.json` in the Antigravity App data folder | Window layout and side panel state |
-| `ledger.json` under `sidecar_data/anti-power-usage/` | The usage plugin's totals for the session, moved into an anonymous "Deleted sessions" row |
+| `ledger.json` under `sidecar_data/anti-power-usage/` | Legacy Anti-Power Usage totals for the session, folded into "Deleted sessions" |
 
 - Subagent conversations are removed with their parent. Sessions created by `/fork` are kept.
 - The same ID can exist in both the Antigravity App and Antigravity CLI. Each is listed separately; select both to remove it from both.
 - The Antigravity App data folder is `~/Library/Application Support/Antigravity` on macOS, `%APPDATA%\Antigravity` on Windows, and `~/.config/Antigravity` on Linux.
 - Runtime logs (`log/`) and files written to `/tmp` or project folders are left untouched.
-- After cleanup, `conversation_summaries.db` is compacted so that no fragments of removed rows remain inside it; if another tool is reading the database, compaction is skipped and fragments stay until the next cleanup. Deleted files themselves are not wiped at the disk level.
+- Compacts `conversation_summaries.db` after cleanup to clear deleted-row fragments (deferred if another tool is reading it). Deleted files are not wiped at the disk level.
 
-Two options at the top of the window are off by default, and the choice is remembered:
+Three options at the top of the window are off by default, and the choice is remembered:
 
-- **CC Switch sync records**: removes session file sync progress (`session_log_sync`) for selected sessions and sessions with no trace left in their store from `cc-switch.db` and `backups/*.db` under `~/.cc-switch/`, then compacts each database. CC Switch can stay open (the live database is left uncompacted; refresh once after CC Switch exits to finish verification). Usage and cost history (`proxy_request_logs`, `session_usage_dedup`, `usage_daily_rollups`) is kept; it holds session IDs, models, and token usage, not conversation content.
 - **Antigravity App browser cache**: empties `Cache/` and `Code Cache/` in the Antigravity App data folder. They cannot be filtered by session and may hold session IDs; the Antigravity App rebuilds them, so the next launch is a little slower.
+- **CC Switch sync records**: removes sync progress (`session_log_sync`) from `cc-switch.db` and `backups/*.db` under `~/.cc-switch/` for selected sessions and sessions with no trace left in their source, then compacts each database (skipping the live database while CC Switch is open; refresh after it exits to recheck). Usage and cost history contains no conversation text and is kept.
+- **Usage Monitor session history**: clears cached titles and prompts for App and CLI sessions with no local copy left, keeping token and cost history. Removes the conversation entry when the installed plugin has a matching independent usage record, or leaves a redacted placeholder otherwise. Standalone Usage Monitor can stay open (local sessions are deleted immediately; refresh after it exits to finish cache cleanup).
 
-App data and CC Switch cleanup runs after session deletion is committed; if it fails, the session stays deleted and the result lists what was not cleaned.
+App data, CC Switch, and Usage Monitor cleanup runs after session deletion is committed; if it fails, the session stays deleted and the result lists what was not cleaned.
 
 Quit the Antigravity App and Antigravity CLI before deleting; cleanup is also refused while Antigravity IDE is running. Deletion cannot be undone.
 
@@ -62,21 +63,13 @@ If cleanup is interrupted, quit any running Antigravity clients and reopen Anti-
 
 ## Usage plugin
 
-Anti-Power ships an Antigravity plugin, **Anti-Power Usage**, that records each model request:
+Use the **Usage Monitor** button in the title bar to install the latest official [Usage Monitor release](https://github.com/yuhuan-dev/antigravity-usage-monitor/releases/latest) into `~/.gemini/config/plugins/usage-monitor`, or uninstall it. Enable the plugin in Antigravity under **Customizations → Installed** to view cache hit rates and account quotas. Prices and the CLI status line are managed in Usage Monitor (if enabled, turn the CLI status line off there before uninstalling).
 
-- the user message, the model's response, its thinking, and tool calls
-- new input, cache read, output, and thinking tokens, and the cache hit rate
-- time to first token, request duration, and output speed
-- cost estimated from model prices; models without a price show as unpriced and stay out of cost totals
-- totals for today, 7 days, 30 days, or a custom range, split by day, model, source, and session
+Installation adds two Anti-Power buttons to the official plugin: the panel header opens the current local session, and Settings opens the **Usage Monitor** dialog. The built-in ZIP updater reapplies the buttons.
 
-Use the usage plugin button in the title bar to install, update, or uninstall it, then turn it on under **Customizations → Installed** in the Antigravity App and open it from the side panel. The running sidecar collects usage at startup and every 10 seconds, even with the panel closed. The plugin only reads local session stores, does not call the Language Server, and uploads nothing; conversation text is read when you open a session and is not stored separately.
+On macOS, quit Antigravity and choose **Launch Antigravity with debugging** in the **Usage Monitor** dialog to use the top bar or composer overlay.
 
-The strip at the top of the panel shows request speed, time to first token, and context utilization for the current session. Expand it for the token count, window limit, and usage breakdown. The Antigravity CLI status line also works independently and can display, for example, `48.8 t/s | 4.4s | ◎ 19%`.
-
-On macOS and Linux, installation configures the status line for an existing CLI profile (with an opt-in to replace an existing or disabled setting, restored on uninstall). On macOS, to show the same three metrics in each window's upper-right corner (updating even with the side panel closed), quit the App and click **Launch Antigravity with debugging** in the plugin dialog.
-
-Once all local copies of a session are gone, its recorded usage is folded into an anonymous "Deleted sessions" row (external removals are confirmed after 60 seconds). Prices come from [antigravity-usage-monitor](https://github.com/yuhuan-dev/antigravity-usage-monitor) and can be updated from Anti-Power's plugin dialog; for quota tracking, use that plugin instead.
+If you installed Anti-Power Usage with v5.1–5.2, uninstall it with the older version first to restore its CLI status line. Its ledger stays on disk and is not imported by Usage Monitor.
 
 ## Installation
 
@@ -118,5 +111,3 @@ Issues and pull requests are welcome.
 ## License
 
 [GPL-3.0](LICENSE). v5.0.1 and earlier were released under the MIT License; that notice is kept in [LICENSE-MIT](LICENSE-MIT).
-
-Parts of `plugin/` are adapted from [antigravity-usage-monitor](https://github.com/yuhuan-dev/antigravity-usage-monitor) (GPL-3.0); see [plugin/NOTICE.md](plugin/NOTICE.md).

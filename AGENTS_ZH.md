@@ -6,7 +6,7 @@
 
 Anti-Power 是一个桌面工具 (Tauri + Vue), 用来查看并清理 Antigravity App 和 Antigravity CLI (`agy`) 的本地会话, 不处理其他工具. 早期的 IDE 补丁 (Markdown 复制, LaTeX, Mermaid) 在 v4.0.0 之后已移除.
 
-Anti-Power 附带 Anti-Power Usage, 用于查看本地请求用量和费用. 配额监控可使用上游 antigravity-usage-monitor 插件.
+Anti-Power 可安装或卸载上游 Usage Monitor 正式版.
 
 ## 目录
 
@@ -15,12 +15,13 @@ Anti-Power 附带 Anti-Power Usage, 用于查看本地请求用量和费用. 配
   - `antigravity_scan.rs`: 会话列表和消息读取
   - `antigravity_clean.rs`: 会话清理
   - `cleanup_extras.rs`: Antigravity App 窗口状态和缓存, CC Switch 同步记录, 用量账本清理
+  - `usage_monitor.rs`: 可选清理 Usage Monitor 中已删除的本地会话明细
   - `usage_ledger.rs`: 将已删除会话折入 Anti-Power Usage 的匿名合计
   - `client_versions.rs`: 读取本机 App 和 CLI 版本, 供会话来源选择器显示
-  - `plugin_install.rs`: 插件安装和卸载, CLI 状态栏配置和还原, 价格表更新及 macOS 启动入口
+  - `plugin_install.rs`: 下载, 安装和卸载 Usage Monitor
+  - `plugin_links.rs`: 为 Usage Monitor 注入 Anti-Power 跳转按钮
   - `sessions.rs`: 会话相关的 Tauri 命令 (`scan_sessions`, `load_session_messages`, `delete_sessions`)
 - `patcher/src/`: Vue 前端, 主界面是 `components/SessionViewer.vue`
-- `plugin/`: Anti-Power Usage 的 sidecar 和随附价格表. Vue 面板源码在 `patcher/plugin-ui/`.
 - `patcher/src/locales/`: `zh-CN` 和 `en-US` 文案
 - `.github/workflows/release.yml`: Windows, macOS, Linux 安装包构建
 
@@ -37,7 +38,7 @@ Anti-Power 附带 Anti-Power Usage, 用于查看本地请求用量和费用. 配
 
 ## 清理规则
 
-- Antigravity App, Antigravity CLI 或 Antigravity IDE 运行时拒绝清理. CC Switch 可以保持运行.
+- Antigravity App, Antigravity CLI 或 Antigravity IDE 运行时拒绝清理. CC Switch 和 Usage Monitor 可保持运行 (Usage Monitor 运行时暂留待清理记录, 退出后下次扫描再清理缓存).
 - 不跟随存储目录内的符号链接.
 - 先把待删文件移入 `.anti-power-clean-*`, 并在索引事务中记录提交. 清理中断后, 还原尚未提交的文件, 完成已提交的清理. 扫描时恢复失败只给出警告, 仍然列出会话.
 - 批量清理时每个存储目录只处理一遍: 一次事务, 一次全文索引重建, 一次 `VACUUM`. 整批失败时逐条重试, 但属于整个存储目录的错误不再重试.
@@ -55,7 +56,6 @@ npm install
 npm run build          # 类型检查和前端构建
 npm run tauri:dev      # 运行应用
 cd src-tauri && cargo test && cargo clippy --all-targets
-cd ../../plugin/sidecars/panel && npm test
 ```
 
 测试在临时目录里构造存储. 测试中不要对真实存储执行清理.
@@ -66,4 +66,4 @@ cd ../../plugin/sidecars/panel && npm test
 - 代码注释用英文, 注释符号后一个空格, 末尾不加句号.
 - 中英文文档统一使用英文标点.
 - 已发布的发布说明和更新日志条目保持原样.
-- `patcher/package.json`, `patcher/src-tauri/tauri.conf.json`, `patcher/src-tauri/Cargo.toml`, `plugin/plugin.json` 和 `plugin/sidecars/panel/package.json` 共用一个版本号 (见 `docs/guides/release-guide.md`).
+- `patcher/package.json`, `patcher/src-tauri/tauri.conf.json` 和 `patcher/src-tauri/Cargo.toml` 共用一个版本号.

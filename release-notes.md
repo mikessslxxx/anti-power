@@ -1,20 +1,28 @@
-# Release Notes / 发布说明 (v5.2.1)
+# Release Notes / 发布说明 (v5.3.0)
 
-## Anti-Power Usage 用量插件
+## 用量插件
 
-修复 Antigravity App 启用顶栏挂载后不显示用量指标的问题: 窗口右上角显示当前会话的输出速度, 首字延迟和上下文占比, 随会话切换更新, 收起侧栏后仍可见.
+- 标题栏弹窗改为从 GitHub 下载安装或卸载上游 [Usage Monitor](https://github.com/yuhuan-dev/antigravity-usage-monitor) 最新正式版; 在 Antigravity 的 **Customizations → Installed** 中启用后可查看缓存命中率及账号的 5 小时和每周额度
+- 安装时为官方插件添加两个 Anti-Power 按钮: 面板顶栏打开当前本地会话, 设置页打开 **Usage Monitor** 弹窗; 插件通过内置 ZIP 更新时会重新应用按钮补丁
+- 卸载保留 Antigravity 数据目录中的设置和用量历史; 若安装目录含 Git 仓库或插件本地数据, 会备份整个目录并显示保存位置
+- 从 v5.1–5.2 切换时, 可先用旧版卸载 Anti-Power Usage 以还原 CLI 状态栏; 原账本保留在本机, Usage Monitor 不会导入
 
-CLI 状态栏分别保留当前会话最近一次实测的速度和首字延迟, 暂无测速时显示活动状态, 并在新会话建库完成前跳过读取以避免争锁.
+## 会话清理
 
-在 macOS 上安装新版 Anti-Power 后, 打开 **用量插件** 安装或点击 **更新到 v5.2.1**, 退出 Antigravity App 后再点击 **启动 Antigravity 并启用挂载** (首次安装需在 Antigravity 的 **Customizations → Installed** 中启用插件).
+- 新增默认关闭的 **Usage Monitor 会话记录** 选项: 清除已无本地副本会话的缓存标题与提问并保留用量和费用; 已安装的插件具备匹配的独立用量记录时移除原对话条目
 
-## Anti-Power Usage
+---
 
-Fix the missing title-bar usage strip in the Antigravity App: each window's upper-right corner shows the current conversation's output speed, time to first token, and context usage, following conversation switches and staying visible with the side panel closed.
+## Usage Monitor
 
-The CLI status line keeps the current conversation's latest measured speed and first-token latency, shows the activity state until speed is available, and skips uninitialized SQLite files to avoid lock contention.
+- Install or uninstall the latest official [Usage Monitor](https://github.com/yuhuan-dev/antigravity-usage-monitor) release from GitHub via the title bar dialog; enable it under **Customizations → Installed** in Antigravity to view cache hit rates and 5-hour/weekly quotas
+- Add two Anti-Power buttons to the official plugin on install: the panel header opens the current local session, and Settings opens the **Usage Monitor** dialog; the built-in ZIP updater reapplies them
+- Keep settings and usage history in Antigravity's data directory on uninstall; back up the plugin folder and report its path when it contains a Git checkout or local plugin data
+- When switching from v5.1–5.2, uninstall Anti-Power Usage with the older Anti-Power first to restore its CLI status line; the existing ledger stays on disk and is not imported
 
-On macOS, install the new Anti-Power, open the usage plugin dialog to install or choose **Update to v5.2.1**, then quit the Antigravity App and click **Launch Antigravity with debugging** (on first install, enable the plugin under **Customizations → Installed** in Antigravity).
+## Session cleanup
+
+- Add an optional **Usage Monitor session history** cleanup that clears cached titles and prompts for sessions with no local copy left while preserving token counts and costs, removing the entry when the installed plugin has a matching independent usage record
 
 ---
 

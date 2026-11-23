@@ -1,148 +1,59 @@
-//! Install the bundled Anti-Power Usage plugin into Antigravity
+//! Install the upstream Usage Monitor release into the Antigravity plugin directory
 
-use super::antigravity_clean::antigravity_running;
 use super::antigravity_store::checked_path;
-use super::usage_ledger::PLUGIN;
 use serde::Serialize;
-use serde_json::{Map, Value};
+use serde_json::Value;
 use std::fs;
-use std::io::{self, Write};
+use std::io::{self, Cursor, Read};
 use std::path::{Path, PathBuf};
-
-use tauri::path::BaseDirectory;
-use tauri::{AppHandle, Manager};
+use std::time::Duration;
 
 type Result<T> = std::result::Result<T, Box<dyn std::error::Error>>;
-
 const PLUGINS: &str = ".gemini/config/plugins";
-const MANIFEST: &str = "plugin.json";
-const UPGRADE: &str = ".anti-power-usage-upgrade";
-const UPGRADE_MARKER: &[u8] = b"anti-power-usage-v1";
-const BUNDLED_CATALOG: &str = "pricing-catalog.json";
-// Kept across upgrades; the plugin applies whichever catalog was updated last
-const DOWNLOADED_CATALOG: &str = "pricing-catalog.download.json";
-const CATALOG_FIELDS: [&str; 5] = [
-    "schemaVersion",
-    "catalogVersion",
-    "updatedAt",
-    "pricing",
-    "placeholders",
-];
-const MAX_CATALOG_BYTES: usize = 4 * 1024 * 1024;
+const NAME: &str = "usage-monitor";
+const RELEASE: &str = "https://github.com/yuhuan-dev/antigravity-usage-monitor/releases/latest/download/usage-monitor.zip";
+const DOWNLOAD_LIMIT: usize = 16 * 1024 * 1024;
+const EXTRACT_LIMIT: u64 = 64 * 1024 * 1024;
 
 #[derive(Debug, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct PluginStatus {
-    pub path: String,
-    pub bundled_version: Option<String>,
-    pub installed_version: Option<String>,
-    /// Another plugin occupies the folder, so Anti-Power leaves it alone
-    pub foreign: bool,
-    pub bundled_catalog: Option<String>,
-    pub installed_catalog: Option<String>,
-    pub downloaded_catalog: Option<String>,
-    /// Changes take effect after Antigravity restarts
-    pub antigravity_running: bool,
-    pub macos_launcher: bool,
-    pub cli_opt_in: bool,
+    path: String,
+    installed_version: Option<String>,
+    macos_launcher: bool,
+    foreign: bool,
+    saved_folder: Option<String>,
 }
 
-fn target(home: &Path) -> PathBuf {
-    home.join(PLUGINS).join(PLUGIN)
-}
-
-fn read_json(path: &Path) -> Option<Value> {
-    serde_json::from_slice(&fs::read(path).ok()?).ok()
-}
-
-fn text(value: &Option<Value>, name: &str) -> Option<String> {
-    value.as_ref()?.get(name)?.as_str().map(str::to_owned)
-}
-
-fn owned_manifest(dir: &Path) -> io::Result<Option<Value>> {
-    Ok(checked_path(dir, Path::new(MANIFEST))?
-        .and_then(|path| read_json(&path))
-        .filter(|manifest| manifest["name"].as_str() == Some(PLUGIN)))
-}
-
-/// The installed folder: None when absent, Err when it is not ours or not a real folder
-fn installed(home: &Path) -> Result<Option<Value>> {
-    let Some(dir) = checked_path(home, &Path::new(PLUGINS).join(PLUGIN))? else {
-        return Ok(None);
-    };
-    if !fs::symlink_metadata(&dir)?.is_dir() {
-        return Err(format!("{} is not a plugin folder", dir.display()).into());
+fn version(dir: &Path) -> Result<String> {
+    let path = checked_path(dir, Path::new("plugin.json"))?.ok_or("Missing plugin manifest")?;
+    let manifest: Value = serde_json::from_slice(&fs::read(path)?)?;
+    if manifest["name"] != NAME {
+        return Err("The folder belongs to a different plugin".into());
     }
-    let Some(manifest) = owned_manifest(&dir)? else {
-        return Err(format!("Another plugin is installed at {}", dir.display()).into());
-    };
-    Ok(Some(manifest))
+    Ok(semver::Version::parse(
+        manifest["version"]
+            .as_str()
+            .ok_or("Missing plugin version")?,
+    )?
+    .to_string())
 }
 
-fn status(home: &Path, bundled: &Path) -> PluginStatus {
-    let dir = target(home);
-    let (manifest, foreign) = match installed(home) {
-        Ok(manifest) => (manifest, false),
-        Err(_) => (None, true),
-    };
-    let catalog = |path: PathBuf| {
-        fs::symlink_metadata(&path).ok().filter(|m| m.is_file())?;
-        text(&read_json(&path), "updatedAt").filter(|s| catalog_time(s).is_some())
-    };
+pub(super) fn installed(home: &Path) -> Result<Option<String>> {
+    checked_path(home, &Path::new(PLUGINS).join(NAME))?
+        .map(|dir| version(&dir))
+        .transpose()
+}
+
+fn status(home: &Path) -> PluginStatus {
+    let current = installed(home);
     PluginStatus {
-        path: dir.to_string_lossy().into_owned(),
-        bundled_version: text(&read_json(&bundled.join(MANIFEST)), "version"),
-        installed_version: text(&manifest, "version"),
-        foreign,
-        bundled_catalog: catalog(bundled.join(BUNDLED_CATALOG)),
-        installed_catalog: manifest.as_ref().and_then(|_| {
-            let legacy = Path::new(".gemini/antigravity/sidecar_data")
-                .join(PLUGIN)
-                .join("panel/data")
-                .join(BUNDLED_CATALOG);
-            [
-                catalog(dir.join(BUNDLED_CATALOG)),
-                checked_path(home, &legacy)
-                    .ok()
-                    .flatten()
-                    .and_then(&catalog),
-            ]
-            .into_iter()
-            .flatten()
-            .max_by_key(|date| catalog_time(date))
-        }),
-        downloaded_catalog: manifest.and_then(|_| catalog(dir.join(DOWNLOADED_CATALOG))),
-        antigravity_running: antigravity_running().unwrap_or(false),
+        path: home.join(PLUGINS).join(NAME).display().to_string(),
         macos_launcher: cfg!(target_os = "macos"),
-        cli_opt_in: cfg!(unix)
-            && checked_path(home, &Path::new(CLI_DIR).join("settings.json"))
-                .ok()
-                .flatten()
-                .and_then(|path| read_json(&path))
-                .is_some_and(|settings| cli_needs_opt_in(settings.get("statusLine"))),
+        foreign: current.is_err(),
+        saved_folder: None,
+        installed_version: current.ok().flatten(),
     }
-}
-
-// Plain files and folders only; symlinks in the bundle are refused
-fn copy_tree(from: &Path, to: &Path) -> Result<()> {
-    fs::create_dir(to)?;
-    for entry in fs::read_dir(from)? {
-        let entry = entry?;
-        let kind = entry.file_type()?;
-        let dest = to.join(entry.file_name());
-        if kind.is_dir() {
-            copy_tree(&entry.path(), &dest)?;
-        } else if kind.is_file() {
-            fs::copy(entry.path(), &dest)?;
-        } else {
-            return Err(format!(
-                "Unexpected entry in the plugin bundle: {}",
-                entry.path().display()
-            )
-            .into());
-        }
-    }
-    Ok(())
 }
 
 fn plugins_dir(home: &Path) -> Result<PathBuf> {
@@ -152,285 +63,20 @@ fn plugins_dir(home: &Path) -> Result<PathBuf> {
         if checked_path(home, &relative)?.is_none() {
             match fs::create_dir(home.join(&relative)) {
                 Ok(()) => {}
-                Err(error) if error.kind() == io::ErrorKind::AlreadyExists => {}
-                Err(error) => return Err(error.into()),
+                Err(e) if e.kind() == io::ErrorKind::AlreadyExists => {}
+                Err(e) => return Err(e.into()),
             }
         }
-        if !checked_path(home, &relative)?.is_some_and(|path| path.is_dir()) {
+        if !checked_path(home, &relative)?.is_some_and(|p| p.is_dir()) {
             return Err(format!("Invalid plugin directory: {}", relative.display()).into());
         }
     }
     Ok(home.join(relative))
 }
 
-// Published upgrade state holds `new` (and `previous` when upgrading); recover only ours
-fn recover_upgrade(home: &Path) -> Result<()> {
-    let Some(txn) = checked_path(home, &Path::new(PLUGINS).join(UPGRADE))? else {
-        return Ok(());
-    };
-    if checked_path(&txn, Path::new("transaction"))?
-        .and_then(|path| fs::read(path).ok())
-        .as_deref()
-        != Some(UPGRADE_MARKER)
-    {
-        return Err(format!("Unknown plugin upgrade directory: {}", txn.display()).into());
-    }
-    let dir = target(home);
-    let previous = checked_path(&txn, Path::new("previous"))?;
-    let fresh = checked_path(&txn, Path::new("new"))?;
-    if installed(home)?.is_none() {
-        let source = previous.or(fresh).ok_or("Incomplete plugin upgrade")?;
-        if owned_manifest(&source)?.is_none() {
-            return Err("Invalid recovery plugin".into());
-        }
-        fs::rename(source, dir)?;
-    } else if previous.is_some() && fresh.is_some() {
-        return Err(format!(
-            "Plugin destination is occupied. Previous installation: {}",
-            txn.display()
-        )
-        .into());
-    }
-    // Retire the journal atomically before removing its contents
-    let retired = tempfile::Builder::new()
-        .prefix(".anti-power-usage-done-")
-        .tempdir_in(txn.parent().unwrap())?;
-    fs::rename(txn, retired.path().join("transaction"))?;
-    Ok(())
-}
-
-/// Install or upgrade using a complete staged copy
-fn install(home: &Path, bundled: &Path) -> Result<()> {
-    if text(&read_json(&bundled.join(MANIFEST)), "name").as_deref() != Some(PLUGIN) {
-        return Err("The bundled plugin is missing".into());
-    }
-    recover_upgrade(home)?;
-    let upgrading = installed(home)?.is_some();
-    let plugins = plugins_dir(home)?;
-    let dir = target(home);
-    let stage = tempfile::Builder::new()
-        .prefix(".anti-power-usage-new-")
-        .tempdir_in(&plugins)?;
-    let fresh = stage.path().join("new");
-    copy_tree(bundled, &fresh)?;
-    if !upgrading {
-        fs::rename(&fresh, &dir)?;
-        return Ok(());
-    }
-    if let Some(catalog) = checked_path(&dir, Path::new(DOWNLOADED_CATALOG))? {
-        fs::copy(catalog, fresh.join(DOWNLOADED_CATALOG))?;
-    }
-    fs::write(stage.path().join("transaction"), UPGRADE_MARKER)?;
-    let txn = plugins.join(UPGRADE);
-    fs::rename(stage.path(), &txn)?;
-    fs::rename(&dir, txn.join("previous"))?;
-    if let Err(error) = fs::rename(txn.join("new"), &dir) {
-        if let Err(restore) = recover_upgrade(home) {
-            return Err(format!(
-                "Plugin install failed: {error}. Recovery: {restore}. Backup: {}",
-                txn.display()
-            )
-            .into());
-        }
-        return Err(error.into());
-    }
-    recover_upgrade(home)
-}
-
-const CLI_DIR: &str = ".gemini/antigravity-cli";
-const CLI_BACKUP: &str = ".anti-power-statusline-backup.json";
-const CLI_COMMAND: &str =
-    r#"node "$HOME/.gemini/config/plugins/anti-power-usage/sidecars/panel/lib/statusline.mjs""#;
-
-fn write_json_file(path: &Path, value: &Value) -> Result<()> {
-    let mut temp = tempfile::NamedTempFile::new_in(path.parent().ok_or("Invalid JSON file path")?)?;
-    serde_json::to_writer_pretty(&mut temp, value)?;
-    temp.write_all(b"\n")?;
-    temp.as_file().sync_all()?;
-    temp.persist(path)?;
-    Ok(())
-}
-
-// Keep an existing provider or an explicit disabled setting unless the user opts in
-fn cli_needs_opt_in(line: Option<&Value>) -> bool {
-    let Some(value) = line.filter(|v| !v.is_null()) else {
-        return false;
-    };
-    if !value.is_object() || value["enabled"] == false {
-        return true;
-    }
-    let command = value["command"].as_str().unwrap_or("").trim();
-    (!command.is_empty() && command != CLI_COMMAND)
-        || value["type"].as_str().is_some_and(|kind| kind != "command")
-}
-
-fn configure_cli(home: &Path, replace: bool) -> Result<()> {
-    let dir = Path::new(CLI_DIR);
-    if !cfg!(unix) || checked_path(home, dir)?.is_none() {
-        return Ok(());
-    }
-    let relative = dir.join("settings.json");
-    let mut current: Value = match checked_path(home, &relative)? {
-        Some(path) => serde_json::from_slice(&fs::read(path)?)?,
-        None => serde_json::json!({}),
-    };
-    let settings = home.join(relative);
-    let obj = current.as_object_mut().ok_or("Invalid agy settings")?;
-    let previous = obj.get("statusLine").cloned();
-    if !replace && cli_needs_opt_in(previous.as_ref()) {
-        return Ok(());
-    }
-    if previous.as_ref().is_some_and(|v| {
-        v["command"].as_str() == Some(CLI_COMMAND) && v["enabled"].as_bool() != Some(false)
-    }) {
-        return Ok(());
-    }
-    let saved = serde_json::json!({ "command": CLI_COMMAND, "previous": previous, "hadStatusLine": previous.is_some() });
-    let backup = home.join(dir).join(CLI_BACKUP);
-    if checked_path(home, &dir.join(CLI_BACKUP))?.is_none()
-        || previous.as_ref().and_then(|v| v["command"].as_str()) != Some(CLI_COMMAND)
-    {
-        write_json_file(&backup, &saved)?;
-    }
-    let mut line = previous
-        .and_then(|v| v.as_object().cloned())
-        .unwrap_or_default();
-    line.insert("type".into(), "command".into());
-    line.insert("command".into(), CLI_COMMAND.into());
-    line.insert("enabled".into(), true.into());
-    line.entry("stack_with_default").or_insert(false.into());
-    obj.insert("statusLine".into(), line.into());
-    write_json_file(&settings, &current)
-}
-
-// Restore the previous provider only while the user still has our command
-fn restore_cli_statusline(home: &Path) -> Result<()> {
-    let dir = Path::new(CLI_DIR);
-    let Some(backup) = checked_path(home, &dir.join(CLI_BACKUP))? else {
-        return Ok(());
-    };
-    if let Some(settings) = checked_path(home, &dir.join("settings.json"))? {
-        let mut current: Value = serde_json::from_slice(&fs::read(&settings)?)?;
-        if current["statusLine"]["command"].as_str() == Some(CLI_COMMAND) {
-            let saved: Value = serde_json::from_slice(&fs::read(&backup)?)?;
-            if saved["command"].as_str() != Some(CLI_COMMAND) || saved.get("previous").is_none() {
-                return Err("Invalid Anti-Power CLI status line backup".into());
-            }
-            if !saved["hadStatusLine"]
-                .as_bool()
-                .unwrap_or(!saved["previous"].is_null())
-            {
-                current.as_object_mut().unwrap().remove("statusLine");
-            } else {
-                current["statusLine"] = saved["previous"].clone();
-            }
-            write_json_file(&settings, &current)?;
-        }
-    }
-    fs::remove_file(backup)?;
-    Ok(())
-}
-
-fn uninstall(home: &Path) -> Result<()> {
-    recover_upgrade(home)?;
-    if installed(home)?.is_none() {
-        return Ok(());
-    }
-    let plugins = plugins_dir(home)?;
-    let old = tempfile::Builder::new()
-        .prefix(".anti-power-usage-old-")
-        .tempdir_in(&plugins)?;
-    restore_cli_statusline(home)?;
-    fs::rename(target(home), old.path().join(PLUGIN))?;
-    Ok(())
-}
-
-fn catalog_time(text: &str) -> Option<u64> {
-    let text = text.trim();
-    if text.len() == 10 && text.as_bytes().get(4) == Some(&b'-') {
-        return super::antigravity_scan::parse_time(&format!("{text}T00:00:00Z"));
-    }
-    text.contains('T')
-        .then(|| super::antigravity_scan::parse_time(text))
-        .flatten()
-}
-
-/// Keep the catalog fields the plugin reads, after checking every price entry
-fn sanitized_catalog(raw: &str) -> Result<Vec<u8>> {
-    if raw.len() > MAX_CATALOG_BYTES {
-        return Err("The price catalog is too large".into());
-    }
-    let mut value: Map<String, Value> =
-        serde_json::from_str(raw).map_err(|_| "The price catalog is not valid JSON")?;
-    value
-        .get("updatedAt")
-        .and_then(Value::as_str)
-        .and_then(catalog_time)
-        .ok_or("Invalid price catalog update time")?;
-    let pricing = value
-        .get("pricing")
-        .and_then(Value::as_object)
-        .filter(|map| !map.is_empty())
-        .ok_or("The price catalog has no prices")?;
-    if !value.get("placeholders").is_some_and(Value::is_object) {
-        return Err("The price catalog has no prices".into());
-    }
-    if !pricing.iter().all(|(model, entry)| {
-        let [Some(input), Some(cache), Some(output)] =
-            ["input", "cache", "output"].map(|key| entry[key].as_f64())
-        else {
-            return false;
-        };
-        !model.trim().is_empty()
-            && (input > 0.0 || output > 0.0)
-            && [input, cache, output]
-                .iter()
-                .all(|rate| (0.0..=10000.0).contains(rate))
-            && ["short", "family"]
-                .iter()
-                .all(|&key| entry[key].as_str().is_some_and(|s| !s.trim().is_empty()))
-    }) {
-        return Err("The price catalog has an invalid price".into());
-    }
-    let kept: Map<String, Value> = CATALOG_FIELDS
-        .into_iter()
-        .filter_map(|name| value.remove(name).map(|entry| (name.to_owned(), entry)))
-        .collect();
-    let mut bytes = serde_json::to_vec_pretty(&kept)?;
-    bytes.push(b'\n');
-    Ok(bytes)
-}
-
-/// Save a downloaded catalog next to the installed plugin, which reloads it on change
-fn update_catalog(home: &Path, raw: &str) -> Result<()> {
-    recover_upgrade(home)?;
-    if installed(home)?.is_none() {
-        return Err("Install the plugin first".into());
-    }
-    let bytes = sanitized_catalog(raw)?;
-    let dir = target(home);
-    let mut tmp = tempfile::NamedTempFile::new_in(&dir)?;
-    tmp.write_all(&bytes)?;
-    tmp.as_file().sync_all()?;
-    tmp.persist(dir.join(DOWNLOADED_CATALOG))?;
-    Ok(())
-}
-
-fn home_dir() -> std::result::Result<PathBuf, String> {
-    std::env::home_dir().ok_or_else(|| "Cannot find the home directory".to_owned())
-}
-
-fn bundled_dir(app: &AppHandle) -> std::result::Result<PathBuf, String> {
-    app.path()
-        .resolve("plugin", BaseDirectory::Resource)
-        .map_err(|error| error.to_string())
-}
-
-// All commands, including status recovery, use the same cross-process lock
-fn change_lock(home: &Path) -> Result<fs::File> {
-    let plugins = plugins_dir(home)?;
-    let config = plugins.parent().ok_or("Invalid plugin directory")?;
-    let name = ".anti-power-usage.lock";
+fn change_lock(plugins: &Path) -> Result<fs::File> {
+    let config = plugins.parent().ok_or("Missing config folder")?;
+    let name = ".anti-power-usage-monitor.lock";
     checked_path(config, Path::new(name))?;
     let lock = fs::OpenOptions::new()
         .read(true)
@@ -442,57 +88,146 @@ fn change_lock(home: &Path) -> Result<fs::File> {
     Ok(lock)
 }
 
+fn unpack(bytes: &[u8], stage: &Path) -> Result<()> {
+    let mut archive = zip::ZipArchive::new(Cursor::new(bytes))?;
+    let mut remaining = EXTRACT_LIMIT;
+    for i in 0..archive.len() {
+        let member = archive.by_index(i)?;
+        let raw = member.name().trim_end_matches('/');
+        let mut parts = raw.split('/');
+        if parts.next() != Some(NAME)
+            || parts.any(|s| {
+                s.is_empty()
+                    || s == "."
+                    || s == ".."
+                    || s.ends_with(['.', ' '])
+                    || s.contains(['\\', ':'])
+            })
+        {
+            return Err("Invalid release archive path".into());
+        }
+        let path = stage.join(member.enclosed_name().ok_or("Invalid release path")?);
+        if member.is_symlink() {
+            return Err("Unexpected symlink in release".into());
+        }
+        if member.is_dir() {
+            fs::create_dir_all(path)?;
+            continue;
+        }
+        let size = member.size();
+        if size > remaining {
+            return Err("Release exceeds unpacked size limit".into());
+        }
+        fs::create_dir_all(path.parent().ok_or("Invalid release path")?)?;
+        let mut file = fs::File::create_new(path)?;
+        if io::copy(&mut member.take(size + 1), &mut file)? != size {
+            return Err("Incomplete release member".into());
+        }
+        remaining -= size;
+    }
+    let plugin = stage.join(NAME);
+    version(&plugin)?;
+    for required in [
+        "mcp_config.json",
+        "sidecars/panel/main.mjs",
+        "sidecars/panel/sidecar.json",
+        "sidecars/panel/app.js",
+    ] {
+        if !plugin.join(required).is_file() {
+            return Err(format!("Missing release file: {required}").into());
+        }
+    }
+    Ok(())
+}
+
+fn install(home: &Path, bytes: &[u8]) -> Result<PluginStatus> {
+    let plugins = plugins_dir(home)?;
+    let _lock = change_lock(&plugins)?;
+    if installed(home)?.is_none() {
+        let stage = tempfile::Builder::new()
+            .prefix(".usage-monitor-install-")
+            .tempdir_in(&plugins)?;
+        unpack(bytes, stage.path())?;
+        super::plugin_links::apply(&stage.path().join(NAME).join("sidecars/panel"))?;
+        fs::rename(stage.path().join(NAME), plugins.join(NAME))?;
+    }
+    Ok(status(home))
+}
+
+fn uninstall(home: &Path) -> Result<PluginStatus> {
+    let plugins = plugins_dir(home)?;
+    let _lock = change_lock(&plugins)?;
+    if installed(home)?.is_some() {
+        let dir = plugins.join(NAME);
+        if checked_path(&dir, Path::new(".git"))?.is_some()
+            || checked_path(&dir, Path::new("sidecars/panel/.data"))?.is_some()
+        {
+            let backup = tempfile::Builder::new()
+                .prefix("usage-monitor-backup-")
+                .tempdir_in(plugins.parent().ok_or("Missing config folder")?)?;
+            let saved = backup.path().join(NAME);
+            fs::rename(dir, &saved)?;
+            let _ = backup.keep();
+            let mut result = status(home);
+            result.saved_folder = Some(saved.display().to_string());
+            return Ok(result);
+        }
+        let retired = tempfile::Builder::new()
+            .prefix(".usage-monitor-uninstall-")
+            .tempdir_in(&plugins)?;
+        fs::rename(dir, retired.path().join(NAME))?;
+        retired.close()?;
+    }
+    Ok(status(home))
+}
+
+async fn download() -> std::result::Result<Vec<u8>, String> {
+    let client = reqwest::Client::builder()
+        .https_only(true)
+        .timeout(Duration::from_secs(90))
+        .user_agent("Anti-Power")
+        .build()
+        .map_err(|e| e.to_string())?;
+    let mut response = client
+        .get(RELEASE)
+        .send()
+        .await
+        .and_then(|r| r.error_for_status())
+        .map_err(|e| e.to_string())?;
+    let mut bytes = Vec::new();
+    while let Some(chunk) = response.chunk().await.map_err(|e| e.to_string())? {
+        if chunk.len() > DOWNLOAD_LIMIT - bytes.len() {
+            return Err("Release download exceeds size limit".into());
+        }
+        bytes.extend_from_slice(&chunk);
+    }
+    Ok(bytes)
+}
+
+fn home_dir() -> std::result::Result<PathBuf, String> {
+    std::env::home_dir().ok_or_else(|| "Cannot find the home directory".into())
+}
+
 #[tauri::command(async)]
-pub fn plugin_status(app: AppHandle) -> std::result::Result<PluginStatus, String> {
+pub fn plugin_status() -> std::result::Result<PluginStatus, String> {
+    Ok(status(&home_dir()?))
+}
+
+#[tauri::command]
+pub async fn install_plugin() -> std::result::Result<PluginStatus, String> {
     let home = home_dir()?;
-    let _lock = if checked_path(&home, &Path::new(PLUGINS).join(UPGRADE))
+    if installed(&home).map_err(|e| e.to_string())?.is_some() {
+        return Ok(status(&home));
+    }
+    let bytes = download().await?;
+    tauri::async_runtime::spawn_blocking(move || install(&home, &bytes).map_err(|e| e.to_string()))
+        .await
         .map_err(|e| e.to_string())?
-        .is_some()
-    {
-        let lock = change_lock(&home).map_err(|e| e.to_string())?;
-        recover_upgrade(&home).map_err(|e| e.to_string())?;
-        Some(lock)
-    } else {
-        None
-    };
-    Ok(status(&home, &bundled_dir(&app)?))
-}
-
-fn change_plugin(
-    app: &AppHandle,
-    action: impl FnOnce(&Path, &Path) -> Result<()>,
-) -> std::result::Result<PluginStatus, String> {
-    let (home, bundled) = (home_dir()?, bundled_dir(app)?);
-    let _change = change_lock(&home).map_err(|error| error.to_string())?;
-    action(&home, &bundled).map_err(|error| error.to_string())?;
-    Ok(status(&home, &bundled))
 }
 
 #[tauri::command(async)]
-pub fn install_plugin(
-    app: AppHandle,
-    replace_cli: Option<bool>,
-) -> std::result::Result<PluginStatus, String> {
-    change_plugin(&app, |home, bundled| {
-        install(home, bundled)?;
-        configure_cli(home, replace_cli.unwrap_or(false)).map_err(|e| {
-            format!("Anti-Power Usage is installed. Could not configure the agy status line: {e}")
-                .into()
-        })
-    })
-}
-
-#[tauri::command(async)]
-pub fn uninstall_plugin(app: AppHandle) -> std::result::Result<PluginStatus, String> {
-    change_plugin(&app, |home, _| uninstall(home))
-}
-
-#[tauri::command(async)]
-pub fn update_plugin_catalog(
-    app: AppHandle,
-    catalog: String,
-) -> std::result::Result<PluginStatus, String> {
-    change_plugin(&app, |home, _| update_catalog(home, &catalog))
+pub fn uninstall_plugin() -> std::result::Result<PluginStatus, String> {
+    uninstall(&home_dir()?).map_err(|e| e.to_string())
 }
 
 /// Launch Services only passes Chromium flags to a cold application
@@ -501,6 +236,12 @@ pub fn launch_antigravity() -> std::result::Result<bool, String> {
     #[cfg(target_os = "macos")]
     {
         use std::process::Command;
+        if installed(&home_dir()?)
+            .map_err(|e| e.to_string())?
+            .is_none()
+        {
+            return Err("Install Usage Monitor first".into());
+        }
         let running = Command::new("/usr/bin/pgrep")
             .args(["-x", "Antigravity"])
             .output()
@@ -532,188 +273,117 @@ pub fn launch_antigravity() -> std::result::Result<bool, String> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use serde_json::json;
+    use std::io::Write;
+    use zip::write::SimpleFileOptions;
 
-    fn bundle(root: &Path, version: &str) -> PathBuf {
-        let dir = root.join(format!("bundle-{version}"));
-        fs::create_dir_all(dir.join("sidecars/panel/web")).unwrap();
-        fs::write(
-            dir.join(MANIFEST),
-            format!(r#"{{"name":"{PLUGIN}","version":"{version}"}}"#),
-        )
-        .unwrap();
-        fs::write(dir.join("sidecars/panel/web/app.js"), version).unwrap();
-        fs::write(
-            dir.join(BUNDLED_CATALOG),
-            r#"{"updatedAt":"2026-11-19T00:00:00Z"}"#,
-        )
-        .unwrap();
-        dir
+    fn archive(extra: &str) -> Vec<u8> {
+        let mut writer = zip::ZipWriter::new(Cursor::new(Vec::new()));
+        for (name, data) in [
+            (
+                "usage-monitor/plugin.json",
+                r#"{"name":"usage-monitor","version":"1.5.3"}"#,
+            ),
+            ("usage-monitor/mcp_config.json", "{}"),
+            (
+                "usage-monitor/sidecars/panel/main.mjs",
+                "const out = await forwardApiCall(pathname, method, data);",
+            ),
+            (
+                "usage-monitor/sidecars/panel/shared/window-bridge-protocol.mjs",
+                "const BRIDGE_API_ROUTE_DEFS = Object.freeze([]);",
+            ),
+            (
+                "usage-monitor/sidecars/panel/backend/api-actions.mjs",
+                "switch (action) { case 'telemetry': break; }",
+            ),
+            (
+                "usage-monitor/sidecars/panel/backend/plugin-updater.mjs",
+                "await verifyPluginJsSyntax(extractedRoot);",
+            ),
+            ("usage-monitor/sidecars/panel/sidecar.json", "{}"),
+            (
+                "usage-monitor/sidecars/panel/app.js",
+                "function setup() { return { el: shellEl, }; }",
+            ),
+            (extra, "extra"),
+        ] {
+            writer
+                .start_file(name, SimpleFileOptions::default())
+                .unwrap();
+            writer.write_all(data.as_bytes()).unwrap();
+        }
+        writer.finish().unwrap().into_inner()
     }
 
     #[test]
-    fn only_configured_or_disabled_status_lines_need_a_choice() {
-        assert!(!cli_needs_opt_in(None));
-        assert!(!cli_needs_opt_in(Some(&json!({"padding": 2}))));
-        assert!(!cli_needs_opt_in(Some(&json!({"command": CLI_COMMAND}))));
-        assert!(cli_needs_opt_in(Some(&json!({"enabled": false}))));
-        assert!(cli_needs_opt_in(Some(&json!({"command": "custom"}))));
-    }
-
-    #[cfg(unix)]
-    #[test]
-    fn cli_provider_is_idempotent_and_restores_only_our_command() {
+    fn only_complete_releases_are_published_and_uninstall_preserves_data() {
         let temp = tempfile::tempdir().unwrap();
         let home = temp.path();
-        let bundled = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../plugin");
-        install(home, &bundled).unwrap();
-        let dir = home.join(CLI_DIR);
-        fs::create_dir_all(&dir).unwrap();
-        let settings = dir.join("settings.json");
-        let original = json!({"keep": true, "statusLine": {"command": "previous", "padding": 3}});
-        configure_cli(home, false).unwrap();
+        let history = home.join(".gemini/antigravity/sidecar_data/usage-monitor/panel/data");
+        fs::create_dir_all(&history).unwrap();
+        fs::write(history.join("trajectory_usage_cache.json"), "history").unwrap();
+        assert!(install(home, &archive("usage-monitor/../escape")).is_err());
+        assert!(!home.join(PLUGINS).join(NAME).exists());
+        let release = archive("usage-monitor/LICENSE");
         assert_eq!(
-            read_json(&settings).unwrap()["statusLine"]["command"],
-            CLI_COMMAND
+            install(home, &release)
+                .unwrap()
+                .installed_version
+                .as_deref(),
+            Some("1.5.3")
         );
-        restore_cli_statusline(home).unwrap();
-        assert!(read_json(&settings).unwrap().get("statusLine").is_none());
-        write_json_file(&settings, &original).unwrap();
-        configure_cli(home, false).unwrap();
-        assert_eq!(read_json(&settings).unwrap(), original);
-        assert!(!dir.join(CLI_BACKUP).exists());
-        configure_cli(home, true).unwrap();
-        configure_cli(home, true).unwrap();
-        assert_eq!(
-            read_json(&settings).unwrap()["statusLine"]["command"],
-            CLI_COMMAND
-        );
-        restore_cli_statusline(home).unwrap();
-        assert_eq!(read_json(&settings).unwrap(), original);
-        configure_cli(home, true).unwrap();
-        let changed = json!({"keep": false, "statusLine": {"command":"my new command"}});
-        write_json_file(&settings, &changed).unwrap();
-        uninstall(home).unwrap();
-        assert_eq!(read_json(&settings).unwrap(), changed);
-    }
-
-    #[test]
-    fn installs_the_repository_plugin() {
-        let home = tempfile::tempdir().unwrap();
-        let home = home.path();
-        let bundled = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../plugin");
-        install(home, &bundled).unwrap();
-        let status = status(home, &bundled);
-        assert_eq!(
-            status.installed_version.as_deref(),
-            Some(env!("CARGO_PKG_VERSION"))
-        );
-        assert!(status.bundled_catalog.is_some());
-        for file in [
-            "sidecars/panel/main.mjs",
-            "sidecars/panel/web/index.html",
-            "sidecars/panel/web/app.js",
-        ] {
-            assert!(target(home).join(file).is_file(), "{file}");
-        }
-    }
-
-    const CATALOG: &str = r#"{"updatedAt":"2026-11-21T00:00:00Z","releaseUrl":"https://example.invalid",
-        "pricing":{"m":{"input":1,"cache":0.1,"output":2,"short":"m","family":"Gemini"}},"placeholders":{}}"#;
-
-    #[test]
-    fn installs_upgrades_and_keeps_a_downloaded_catalog() {
-        let home = tempfile::tempdir().unwrap();
-        let home = home.path();
-        let dir = target(home);
-        assert!(update_catalog(home, CATALOG).is_err());
-
-        install(home, &bundle(home, "1.0.0")).unwrap();
-        assert_eq!(
-            fs::read_to_string(dir.join("sidecars/panel/web/app.js")).unwrap(),
-            "1.0.0"
-        );
-        update_catalog(home, CATALOG).unwrap();
-        let saved = fs::read_to_string(dir.join(DOWNLOADED_CATALOG)).unwrap();
-        assert!(saved.contains("2026-11-21") && !saved.contains("releaseUrl"));
-
-        let update = bundle(home, "2.0.0");
-        install(home, &update).unwrap();
-        let status = status(home, &update);
-        assert_eq!(status.installed_version.as_deref(), Some("2.0.0"));
-        assert_eq!(
-            status.downloaded_catalog.as_deref(),
-            Some("2026-11-21T00:00:00Z")
-        );
-        assert!(!status.foreign);
-        assert_eq!(
-            fs::read_to_string(dir.join("sidecars/panel/web/app.js")).unwrap(),
-            "2.0.0"
-        );
-        // Only the plugin folder is left; staging folders are gone
-        let names: Vec<_> = fs::read_dir(home.join(PLUGINS))
+        let dir = home.join(PLUGINS).join(NAME);
+        assert!(dir.join("sidecars/panel/anti-power/adapter.mjs").is_file());
+        assert!(fs::read_to_string(dir.join("sidecars/panel/app.js"))
             .unwrap()
-            .map(|e| e.unwrap().file_name())
-            .collect();
-        assert_eq!(names, [PLUGIN]);
-
-        uninstall(home).unwrap();
-        assert!(!dir.exists());
-        uninstall(home).unwrap();
-    }
-
-    #[test]
-    fn interrupted_upgrade_restores_the_previous_plugin_and_catalog() {
-        let temp = tempfile::tempdir().unwrap();
-        let home = temp.path();
-        install(home, &bundle(home, "1")).unwrap();
-        update_catalog(home, CATALOG).unwrap();
-        let txn = home.join(PLUGINS).join(UPGRADE);
-        fs::create_dir(&txn).unwrap();
-        fs::write(txn.join("transaction"), UPGRADE_MARKER).unwrap();
-        copy_tree(&bundle(home, "2"), &txn.join("new")).unwrap();
-        fs::rename(target(home), txn.join("previous")).unwrap();
-        recover_upgrade(home).unwrap();
-        assert_eq!(
-            text(&installed(home).unwrap(), "version").as_deref(),
-            Some("1")
-        );
-        assert!(target(home).join(DOWNLOADED_CATALOG).exists());
-        assert!(!txn.exists());
-        recover_upgrade(home).unwrap();
-    }
-
-    #[test]
-    fn leaves_a_foreign_folder_alone() {
-        let home = tempfile::tempdir().unwrap();
-        let home = home.path();
-        let dir = target(home);
-        fs::create_dir_all(&dir).unwrap();
-        fs::write(dir.join(MANIFEST), r#"{"name":"someone-else"}"#).unwrap();
-        let bundled = bundle(home, "1.0.0");
-        assert!(install(home, &bundled).is_err());
+            .contains("antipower://session/"));
+        fs::create_dir(dir.join(".git")).unwrap();
+        let saved = uninstall(home).unwrap().saved_folder.unwrap();
+        assert!(Path::new(&saved).join(".git").is_dir());
+        install(home, &release).unwrap();
+        assert!(uninstall(home).unwrap().installed_version.is_none());
+        assert!(history.join("trajectory_usage_cache.json").is_file());
+        fs::create_dir(&dir).unwrap();
+        assert!(status(home).foreign);
+        assert!(install(home, &release).is_err());
         assert!(uninstall(home).is_err());
-        assert!(status(home, &bundled).foreign);
-        assert_eq!(
-            fs::read_to_string(dir.join(MANIFEST)).unwrap(),
-            r#"{"name":"someone-else"}"#
-        );
     }
 
     #[test]
-    fn rejects_catalogs_without_valid_prices() {
-        let catalog: Value = serde_json::from_str(CATALOG).unwrap();
-        for (field, invalid) in [
-            ("/updatedAt", json!("2026-11-32T00:00:00Z")),
-            ("/pricing", json!({})),
-            ("/pricing/m/family", json!("")),
-            ("/pricing/m/input", json!(-1)),
-        ] {
-            let mut invalid_catalog = catalog.clone();
-            *invalid_catalog.pointer_mut(field).unwrap() = invalid;
-            let result = sanitized_catalog(&invalid_catalog.to_string());
-            assert!(result.is_err(), "{field}");
+    #[ignore = "downloads the current GitHub release"]
+    fn official_release_installs_and_uninstalls_in_a_temporary_home() {
+        let temp = tempfile::tempdir().unwrap();
+        let bytes = tauri::async_runtime::block_on(download()).unwrap();
+        assert!(install(temp.path(), &bytes)
+            .unwrap()
+            .installed_version
+            .is_some());
+        // The built-in updater and desktop installer must produce identical plugin files
+        let staging = tempfile::tempdir().unwrap();
+        unpack(&bytes, staging.path()).unwrap();
+        let installed = temp.path().join(PLUGINS).join(NAME).join("sidecars/panel");
+        let root = staging.path().join(NAME);
+        let check = std::process::Command::new("node")
+            .args(["--input-type=module", "-e", "import {pathToFileURL} from 'node:url'; await (await import(pathToFileURL(process.argv[1]))).prepareUpdate(process.argv[2]);"])
+            .arg(installed.join("anti-power/adapter.mjs"))
+            .arg(&root)
+            .status().unwrap();
+        assert!(check.success());
+        for entry in zip::ZipArchive::new(Cursor::new(&bytes))
+            .unwrap()
+            .file_names()
+        {
+            let Some(file) = entry.strip_prefix("usage-monitor/sidecars/panel/") else {
+                continue;
+            };
+            if !file.is_empty() && !file.ends_with('/') {
+                assert_eq!(
+                    fs::read(installed.join(file)).unwrap(),
+                    fs::read(root.join("sidecars/panel").join(file)).unwrap(),
+                    "{file}"
+                );
+            }
         }
-        assert!(sanitized_catalog(include_str!("../../../../plugin/pricing-catalog.json")).is_ok());
+        assert!(uninstall(temp.path()).unwrap().installed_version.is_none());
     }
 }

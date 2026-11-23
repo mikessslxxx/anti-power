@@ -4,6 +4,19 @@
 
 ---
 
+## v5.3.0 (2026-11-22)
+
+### Usage Monitor
+- Install or uninstall the latest official [Usage Monitor](https://github.com/yuhuan-dev/antigravity-usage-monitor) release from GitHub via the title bar dialog; enable it under **Customizations → Installed** in Antigravity to view cache hit rates and 5-hour/weekly quotas
+- Add two Anti-Power buttons to the official plugin on install: the panel header opens the current local session, and Settings opens the **Usage Monitor** dialog; the built-in ZIP updater reapplies them
+- Keep settings and usage history in Antigravity's data directory on uninstall; back up the plugin folder and report its path when it contains a Git checkout or local plugin data
+- When switching from v5.1–5.2, uninstall Anti-Power Usage with the older Anti-Power first to restore its CLI status line; the existing ledger stays on disk and is not imported
+
+### Session cleanup
+- Add an optional **Usage Monitor session history** cleanup that clears cached titles and prompts for sessions with no local copy left while preserving token counts and costs, removing the entry when the installed plugin has a matching independent usage record
+
+---
+
 ## v5.2.1 (2026-11-22)
 
 ### Anti-Power Usage

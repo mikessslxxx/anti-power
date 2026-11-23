@@ -6,7 +6,7 @@ English | [中文](AGENTS_ZH.md)
 
 Anti-Power is a desktop tool (Tauri + Vue) that lists and cleans local sessions for the Antigravity App and the Antigravity CLI (`agy`). It does not manage other tools. The earlier IDE patches (Markdown copy, LaTeX, Mermaid) were removed after v4.0.0.
 
-Anti-Power ships Anti-Power Usage for local per-request usage and cost. Quota tracking is available in the upstream antigravity-usage-monitor plugin.
+Anti-Power installs or uninstalls the official upstream Usage Monitor release.
 
 ## Layout
 
@@ -15,12 +15,13 @@ Anti-Power ships Anti-Power Usage for local per-request usage and cost. Quota tr
   - `antigravity_scan.rs`: session listing and message loading
   - `antigravity_clean.rs`: session cleanup
   - `cleanup_extras.rs`: Antigravity App window state and caches, CC Switch sync records, and usage ledger cleanup
+  - `usage_monitor.rs`: optional cleanup of deleted local session details in Usage Monitor
   - `usage_ledger.rs`: folding removed sessions into Anti-Power Usage's deleted totals
   - `client_versions.rs`: installed App and CLI versions for the session source selector
-  - `plugin_install.rs`: plugin installation, CLI status line setup and restoration, price updates, and the macOS launcher
+  - `plugin_install.rs`: download, install and uninstall Usage Monitor
+  - `plugin_links.rs`: patch Anti-Power navigation links into Usage Monitor
   - `sessions.rs`: session Tauri commands (`scan_sessions`, `load_session_messages`, `delete_sessions`)
 - `patcher/src/`: Vue frontend; `components/SessionViewer.vue` is the main view
-- `plugin/`: Anti-Power Usage sidecar and bundled catalog. `patcher/plugin-ui/` holds the Vue panel source.
 - `patcher/src/locales/`: `zh-CN` and `en-US` strings
 - `.github/workflows/release.yml`: installer builds for Windows, macOS, and Linux
 
@@ -37,7 +38,7 @@ Last checked on macOS against Antigravity App 2.34.0 and Antigravity CLI 1.5.14.
 
 ## Cleanup rules
 
-- Refuse to run while the Antigravity App, Antigravity CLI, or Antigravity IDE is running. CC Switch can stay open.
+- Refuse session cleanup while the Antigravity App, Antigravity CLI, or Antigravity IDE is running. CC Switch and Usage Monitor can stay open (cache cleanup stays pending until the next scan after Usage Monitor exits).
 - Never follow symlinks inside a store.
 - Stage files in `.anti-power-clean-*` and record the commit in the index transaction. After an interruption, restore uncommitted files and finish committed deletions. A scan reports a failed recovery as a warning and still lists sessions.
 - Clean each store in one pass for a batch: one transaction, one FTS rebuild, one `VACUUM`. When a batch fails, retry sessions one by one unless the failure is store-wide.
@@ -55,7 +56,6 @@ npm install
 npm run build          # type check and frontend build
 npm run tauri:dev      # run the app
 cd src-tauri && cargo test && cargo clippy --all-targets
-cd ../../plugin/sidecars/panel && npm test
 ```
 
 Tests build synthetic stores in temporary directories. Never run cleanup against a real store in tests.
@@ -66,4 +66,4 @@ Tests build synthetic stores in temporary directories. Never run cleanup against
 - Code comments are in English, with one space after the comment marker and no trailing period.
 - Docs use English punctuation in both languages.
 - Leave published release notes and changelog entries as they are.
-- `patcher/package.json`, `patcher/src-tauri/tauri.conf.json`, `patcher/src-tauri/Cargo.toml`, `plugin/plugin.json`, and `plugin/sidecars/panel/package.json` share one version number (see `docs/guides/release-guide.md`).
+- `patcher/package.json`, `patcher/src-tauri/tauri.conf.json`, and `patcher/src-tauri/Cargo.toml` share one version number.
