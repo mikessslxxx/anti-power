@@ -5,7 +5,7 @@
 <h1 align="center">Anti-Power</h1>
 
 <p align="center">
-  <a href="https://github.com/mikessslxxx/anti-power/releases"><img src="https://img.shields.io/badge/Version-v5.4.0-blue.svg" alt="Version"></a>
+  <a href="https://github.com/mikessslxxx/anti-power/releases"><img src="https://img.shields.io/badge/Version-v5.4.1-blue.svg" alt="Version"></a>
   <img src="https://img.shields.io/badge/Antigravity_App-2.34.0-green.svg" alt="Antigravity App">
   <img src="https://img.shields.io/badge/Antigravity_CLI-1.5.14-green.svg" alt="Antigravity CLI">
 </p>
@@ -22,6 +22,7 @@
 - Searches by title, project, or session ID, filters by source (with detected client versions), and views messages
 - Deletes single or multiple sessions and reports the outcome for each
 - Flags index-only leftovers (records left behind after another tool removes the session files), with an option to hide or delete them
+- Previews and clears empty model probe sessions in Magpie's separate store
 
 Verified on macOS with Antigravity App 2.34.0 and Antigravity CLI 1.5.14. The Windows and Linux builds are untested. Antigravity IDE (`~/.gemini/antigravity-ide`) is not supported.
 
@@ -62,6 +63,12 @@ App data, CC Switch, and Usage Monitor cleanup runs after session deletion is co
 Quit the Antigravity App and Antigravity CLI before deleting; cleanup is also refused while Antigravity IDE is running. Deletion cannot be undone.
 
 If cleanup is interrupted, quit any running Antigravity clients and reopen Anti-Power or refresh the session list: Anti-Power finalizes committed deletions and restores uncommitted ones, or shows a notice above the list if recovery fails.
+
+### Magpie model probes
+
+When Magpie's separate agy store exists, **Clean Magpie model probes** appears next to the cleanup options (the confirmation shows the store and count). Quit Magpie and Antigravity clients to recheck and permanently delete `magpie-agy-models-*` sessions with zero steps and no input, along with their index entries, while keeping regular sessions.
+
+Uses `antigravity-cli/` under `AGY_BRIDGE_GEMINI_DIR` (absolute path) when set, or `magpie-agy-bridge/agy-home/antigravity-cli/` under `XDG_STATE_HOME` or `~/.local/state` otherwise.
 
 ## Usage plugin
 

@@ -4,6 +4,17 @@
 
 ---
 
+## v5.4.1 (2026-11-24)
+
+### Session cleanup
+- Add **Clean Magpie model probes** to preview and batch-delete empty probe sessions and their indexes from Magpie's separate agy store, keeping regular sessions
+- Use the separate store configured in `AGY_BRIDGE_GEMINI_DIR` when set, or Magpie's default location otherwise
+
+### Interface
+- Align the Magpie cleanup and Refresh buttons on the right; wrap cleanup options in narrow windows, with a minimum window size of 640 × 460
+
+---
+
 ## v5.4.0 (2026-11-24)
 
 ### Interface

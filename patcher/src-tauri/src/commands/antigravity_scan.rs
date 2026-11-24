@@ -245,7 +245,7 @@ fn open_transcript(root: &Path, id: &str) -> io::Result<Option<File>> {
     }
 }
 
-fn open_db(path: &Path) -> Result<Connection, rusqlite::Error> {
+pub(super) fn open_db(path: &Path) -> Result<Connection, rusqlite::Error> {
     for entry in [
         path.to_path_buf(),
         path.with_extension("db-wal"),
@@ -460,7 +460,7 @@ fn conversation_artifact<'a>(
     (id, modified)
 }
 
-fn has_conversation_data(db: &Connection) -> rusqlite::Result<bool> {
+pub(super) fn has_conversation_data(db: &Connection) -> rusqlite::Result<bool> {
     let mut tables = db.prepare(
         "SELECT name FROM sqlite_schema WHERE type = 'table' AND name IN ('steps', 'gen_metadata')",
     )?;

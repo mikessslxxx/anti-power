@@ -1,6 +1,6 @@
 [package]
 name = "Anti-Power"
-version = "5.4.0"
+version = "5.4.1"
 description = "Local session manager for the Antigravity App and Antigravity CLI"
 license = "GPL-3.0-only"
 repository = "https://github.com/mikessslxxx/anti-power"

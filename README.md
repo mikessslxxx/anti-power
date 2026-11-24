@@ -5,7 +5,7 @@
 <h1 align="center">Anti-Power</h1>
 
 <p align="center">
-  <a href="https://github.com/mikessslxxx/anti-power/releases"><img src="https://img.shields.io/badge/版本-v5.4.0-blue.svg" alt="版本"></a>
+  <a href="https://github.com/mikessslxxx/anti-power/releases"><img src="https://img.shields.io/badge/版本-v5.4.1-blue.svg" alt="版本"></a>
   <img src="https://img.shields.io/badge/Antigravity_App-2.34.0-green.svg" alt="Antigravity App">
   <img src="https://img.shields.io/badge/Antigravity_CLI-1.5.14-green.svg" alt="Antigravity CLI">
 </p>
@@ -22,6 +22,7 @@
 - 按标题, 项目或会话 ID 搜索, 按来源 (显示检测到的客户端版本) 筛选并查看消息
 - 单条或批量删除, 逐条显示结果
 - 标出只剩索引的残留记录 (其他工具删掉会话文件后留下的), 可隐藏或删除
+- 预览并批量清理 Magpie 独立存储中的空模型探测会话
 
 已在 macOS 上用 Antigravity App 2.34.0 和 Antigravity CLI 1.5.14 核对. Windows 和 Linux 安装包尚未实测. 不支持 Antigravity IDE (`~/.gemini/antigravity-ide`).
 
@@ -62,6 +63,12 @@
 删除前须退出 Antigravity App 和 Antigravity CLI; Antigravity IDE 运行时同样会拒绝清理. 删除无法撤销.
 
 如果清理中途退出, 关闭上述客户端后重新打开 Anti-Power 或刷新列表: 已提交的清理会继续收尾, 尚未提交的清理会还原; 无法恢复时列表上方会给出提示.
+
+### Magpie 模型探测会话
+
+检测到 Magpie 的独立 agy 存储时, 清理选项旁会显示 **清理 Magpie 模型探测会话** (确认框列出目录和数量). 退出 Magpie 和 Antigravity 客户端后, 可复核并永久删除 `magpie-agy-models-*` 下 0 步且无输入的会话及其索引, 保留同存储中的正常会话.
+
+优先使用 `AGY_BRIDGE_GEMINI_DIR` (绝对路径) 下的 `antigravity-cli/`, 未设置时在 `XDG_STATE_HOME` 或 `~/.local/state` 下查找 `magpie-agy-bridge/agy-home/antigravity-cli/`.
 
 ## 用量插件
 

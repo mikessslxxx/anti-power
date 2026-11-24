@@ -7,6 +7,7 @@ use super::antigravity_store::{
 use super::cc_switch;
 use super::cleanup_extras::{self, Cleaned};
 use super::index_only;
+use super::magpie_probes;
 use super::sessions::{CleanOptions, DeleteReport, RecoveryStatus, SessionRef};
 use super::usage_monitor::{self, CacheCleanup};
 use rusqlite::{Connection, OpenFlags, OptionalExtension, TransactionBehavior};
@@ -60,8 +61,32 @@ enum Client {
 #[derive(Clone, Copy)]
 enum Scope<'a> {
     Selected,
+    MagpieProbes,
     MatchingIndexes,
     HistoricalIndexes(&'a Path),
+}
+
+pub(super) fn delete_magpie_probes(home: &Path, ids: &[String]) -> Result<RecoveryStatus> {
+    if ids.is_empty() {
+        return Ok(RecoveryStatus::default());
+    }
+    if !ids.iter().all(|id| valid_id(id)) || ids.iter().collect::<BTreeSet<_>>().len() != ids.len()
+    {
+        return Err("Invalid Magpie model probe selection".into());
+    }
+    let root = magpie_probes::root(home)?.ok_or("Magpie session store no longer exists")?;
+    let targets: Vec<_> = ids.iter().map(|id| (id.as_str(), false)).collect();
+    clean(
+        &root,
+        CLI_INDEX,
+        &targets,
+        CleanOptions::default(),
+        Scope::MagpieProbes,
+        || running_clients()?.require_magpie_closed().map(drop),
+    )?;
+    let mut recovery = RecoveryStatus::default();
+    recover_store(home, &root, true, &mut recovery);
+    Ok(recovery)
 }
 
 /// Delete sessions, clean leftover indexes, and update external app data
@@ -81,7 +106,7 @@ pub(super) fn delete(
         require_clients_closed,
     );
     for root in cleaned_roots {
-        recover_store(home, &root, &mut report.recovery);
+        recover_store(home, &root, false, &mut report.recovery);
     }
     report
 }
@@ -216,9 +241,17 @@ pub(super) fn index_name(provider_id: &str) -> &'static str {
 struct Running {
     clients: [bool; 2],
     cc_switch: bool,
+    magpie: bool,
 }
 
 impl Running {
+    fn require_magpie_closed(self) -> Result<Self> {
+        if self.magpie {
+            return Err("Quit Magpie before cleaning its model probe sessions".into());
+        }
+        self.require_closed()
+    }
+
     fn require_closed(self) -> Result<Self> {
         let quit = match self.clients {
             [false, false] => return Ok(self),
@@ -247,6 +280,7 @@ fn running_clients() -> Result<Running> {
     let mut running = Running {
         clients: [false; 2],
         cc_switch: false,
+        magpie: false,
     };
     for process in system.processes().values() {
         let name = process
@@ -262,6 +296,10 @@ fn running_clients() -> Result<Running> {
             running.clients[client as usize] = true;
         }
         running.cc_switch |= cc_switch::is_process_name(&name);
+        running.magpie |= matches!(
+            name.to_ascii_lowercase().trim_end_matches(".exe"),
+            "magpie" | "magpie-bun"
+        );
     }
     Ok(running)
 }
@@ -317,8 +355,16 @@ pub(super) fn recover_pending(home: &Path, provider_id: &str, recovery: &mut Rec
         let Ok(Some(root)) = checked_path(home, relative) else {
             continue;
         };
-        recover_store(home, &root, recovery);
+        recover_store(home, &root, false, recovery);
     }
+}
+
+pub(super) fn recover_magpie_pending(home: &Path, recovery: &mut RecoveryStatus) -> bool {
+    let Ok(Some(root)) = magpie_probes::root(home) else {
+        return false;
+    };
+    recover_store(home, &root, true, recovery);
+    true
 }
 
 #[derive(Serialize, Deserialize)]
@@ -357,8 +403,8 @@ fn receipts(root: &Path) -> Result<Vec<PathBuf>> {
     Ok(paths)
 }
 
-fn recover_store(home: &Path, root: &Path, recovery: &mut RecoveryStatus) {
-    match recover_store_with(home, root, running_clients) {
+fn recover_store(home: &Path, root: &Path, is_magpie: bool, recovery: &mut RecoveryStatus) {
+    match recover_store_with(home, root, is_magpie, running_clients) {
         Ok(status) => {
             recovery.warnings.extend(status.warnings);
             recovery.cc_switch_verification_pending |= status.cc_switch_verification_pending;
@@ -373,6 +419,7 @@ fn recover_store(home: &Path, root: &Path, recovery: &mut RecoveryStatus) {
 fn recover_store_with(
     home: &Path,
     root: &Path,
+    is_magpie: bool,
     clients: fn() -> Result<Running>,
 ) -> Result<RecoveryStatus> {
     let stages = recovery_dirs(root)?;
@@ -381,7 +428,13 @@ fn recover_store_with(
     if stages.is_empty() && pending_receipts.is_empty() && !sync_pending {
         return Ok(RecoveryStatus::default());
     }
-    let running = match clients()?.require_closed() {
+    let running = clients()?;
+    let closed = if is_magpie {
+        running.require_magpie_closed()
+    } else {
+        running.require_closed()
+    };
+    let running = match closed {
         Ok(running) => running,
         Err(error) if stages.is_empty() => {
             // Pure cache and sync follow-ups can wait for the clients to close
@@ -585,13 +638,20 @@ fn clean_locked(
         .map_err(store_wide)?;
     let selected: Vec<_> = targets.iter().map(|(id, _)| *id).collect();
     let related = related_ids(tx.as_deref(), &selected)?;
+    let probes_only = matches!(scope, Scope::MagpieProbes);
+    if probes_only {
+        let db = tx
+            .as_deref()
+            .ok_or("Magpie session summary database is missing")?;
+        magpie_probes::require_probes(root, db, &related)?;
+    }
     let ids = if matches!(scope, Scope::HistoricalIndexes(_)) {
         selected.into_iter().map(str::to_owned).collect()
     } else {
         related.clone()
     };
     let presence = lock_presence(root, &ids)?;
-    let only_indexes = !matches!(scope, Scope::Selected);
+    let only_indexes = matches!(scope, Scope::MatchingIndexes | Scope::HistoricalIndexes(_));
     let index_only_ids = if only_indexes {
         ids.clone()
     } else {
@@ -654,16 +714,23 @@ fn clean_locked(
             }
         }
     }
-    sidecar_changes(root, &ids, &mut files, &mut replacements)?;
+    // Probes have no sidecar state or external usage records
+    if !probes_only {
+        sidecar_changes(root, &ids, &mut files, &mut replacements)?;
+    }
     if let Some(tx) = &tx {
         remove_index_rows(tx, &ids)?;
     }
     check_clients().map_err(store_wide)?;
     let stage = Stage::prepare(root, files, &replacements, tx.is_some())?;
     let receipt = Receipt {
-        local_done: false,
+        local_done: probes_only,
         ids,
-        deleted_databases: stage.deleted_databases(),
+        deleted_databases: if probes_only {
+            BTreeSet::new()
+        } else {
+            stage.deleted_databases()
+        },
         options,
     };
     let result = (move || -> Result<()> {
@@ -2932,10 +2999,11 @@ mod tests {
         let busy = super::replay_extras(home, &cli, false, || Ok(true)).unwrap();
         assert!(busy.usage_monitor_cleanup_pending && busy.warnings.is_empty());
         assert_eq!(receipts(&cli).unwrap().len(), 1);
-        let reopened = recover_store_with(home, &cli, || {
+        let reopened = recover_store_with(home, &cli, false, || {
             Ok(Running {
                 clients: [true, false],
                 cc_switch: false,
+                magpie: false,
             })
         })
         .unwrap();
@@ -2991,24 +3059,32 @@ mod tests {
             Ok(Running {
                 clients: [true, false],
                 cc_switch: false,
+                magpie: false,
             })
         };
         assert!(
-            !recover_store_with(home, &root, running)
+            !recover_store_with(home, &root, false, running)
                 .unwrap()
                 .cc_switch_verification_pending
         );
         fs::write(root.join(SYNC_PENDING), []).unwrap();
-        let deferred = recover_store_with(home, &root, running).unwrap();
+        let deferred = recover_store_with(home, &root, false, running).unwrap();
         assert!(deferred.cc_switch_verification_pending && deferred.warnings.is_empty());
         assert!(root.join(SYNC_PENDING).is_file());
         fs::write(root.join(format!("{RECEIPT_PREFIX}123456789012")), []).unwrap();
-        assert!(recover_store_with(home, &root, running).is_err());
+        assert!(recover_store_with(home, &root, false, running).is_err());
     }
 
     #[test]
     fn cc_switch_does_not_block_cleanup() {
-        let running = |clients, cc_switch| Running { clients, cc_switch }.require_closed();
+        let running = |clients, cc_switch| {
+            Running {
+                clients,
+                cc_switch,
+                magpie: false,
+            }
+            .require_closed()
+        };
         assert!(running([false, false], true).is_ok_and(|running| running.cc_switch));
         assert!(running([false, false], false).is_ok_and(|running| !running.cc_switch));
         for clients in [[true, false], [false, true], [true, true]] {
@@ -3083,5 +3159,94 @@ mod tests {
             fs::write(root.join(index), [10, 255]).unwrap();
             assert!(scan(home.path(), provider).unwrap().is_empty());
         }
+    }
+
+    #[test]
+    fn magpie_cleanup_rechecks_preview_and_keeps_real_sessions() {
+        let home = tempfile::tempdir().unwrap();
+        let root = home.path().join("magpie-custom/antigravity-cli");
+        let conversations = root.join("conversations");
+        fs::create_dir_all(&conversations).unwrap();
+        let summary = Connection::open(root.join(INDEX_DB)).unwrap();
+        summary.execute_batch(
+            "CREATE TABLE conversation_summaries (
+                conversation_id TEXT PRIMARY KEY, workspace_uris TEXT, step_count INTEGER DEFAULT 0,
+                last_user_input_step_index INTEGER DEFAULT -1, title TEXT DEFAULT '',
+                preview TEXT DEFAULT '', nesting_depth INTEGER DEFAULT 0, parent_conversation_id TEXT DEFAULT ''
+            );",
+        ).unwrap();
+        let workspace = |name: &str| {
+            let path = std::env::temp_dir().join(name);
+            let url = tauri::Url::from_file_path(path).unwrap();
+            serde_json::to_string(&[url.as_str()]).unwrap()
+        };
+        let probe = workspace("magpie-agy-models-Ab12Cd");
+        let history = "00000000-0000-4000-8000-000000000004";
+        for (id, uris) in [
+            (TARGET, probe.clone()),
+            (FORK, probe.clone()),
+            (NESTED, workspace("my-magpie-agy-models-Ab12Cd")),
+            (history, probe),
+        ] {
+            summary.execute(
+                "INSERT INTO conversation_summaries (conversation_id,workspace_uris) VALUES (?1,?2)",
+                [id, &uris],
+            ).unwrap();
+        }
+        fs::write(
+            root.join(HISTORY),
+            format!("{{\"conversationId\":\"{history}\"}}\n"),
+        )
+        .unwrap();
+        fs::write(
+            root.join(CLI_INDEX),
+            [summary_entry(TARGET, false), summary_entry(FORK, false)].concat(),
+        )
+        .unwrap();
+        let empty = conversations.join(format!("{TARGET}.db"));
+        let real = conversations.join(format!("{FORK}.db"));
+        for path in [&empty, &real] {
+            Connection::open(path)
+                .unwrap()
+                .execute("CREATE TABLE steps (id INTEGER)", [])
+                .unwrap();
+        }
+        Connection::open(&real)
+            .unwrap()
+            .execute("INSERT INTO steps VALUES (1)", [])
+            .unwrap();
+        let preview = magpie_probes::preview(root.clone()).unwrap();
+        assert_eq!(preview.ids, [TARGET]);
+
+        let attempt = || {
+            super::clean(
+                &root,
+                CLI_INDEX,
+                &[(TARGET, false)],
+                CleanOptions::default(),
+                Scope::MagpieProbes,
+                || Ok(()),
+            )
+        };
+        let update = |steps: u8| {
+            summary
+                .execute(
+                    "UPDATE conversation_summaries SET step_count = ?1 WHERE conversation_id = ?2",
+                    rusqlite::params![steps, TARGET],
+                )
+                .unwrap();
+        };
+        update(1);
+        assert!(attempt().is_err() && empty.exists());
+        update(0);
+        attempt().unwrap();
+
+        assert!(!empty.exists() && real.exists());
+        assert_eq!(store_index_ids(&root, CLI).unwrap().len(), 3);
+        assert_eq!(
+            indexed_ids(&fs::read(root.join(CLI_INDEX)).unwrap(), false, false).unwrap(),
+            [FORK]
+        );
+        assert!(magpie_probes::preview(root).unwrap().ids.is_empty());
     }
 }

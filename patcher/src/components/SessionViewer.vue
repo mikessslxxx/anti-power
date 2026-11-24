@@ -51,6 +51,14 @@
         <input v-model="cleanOptions.usageMonitor" type="checkbox" :disabled="actionsBusy" />
         <span>{{ $t('sessionViewer.optionUsageMonitor') }}</span>
       </label>
+      <button
+        v-if="magpieStoreAvailable"
+        class="sv-btn sv-options-action"
+        :disabled="actionsBusy"
+        @click="cleanMagpieProbes"
+      >
+        <span>{{ $t('sessionViewer.cleanMagpieProbes') }}</span>
+      </button>
     </div>
 
     <div v-if="scanError" class="sv-feedback sv-error" role="alert">
@@ -70,6 +78,14 @@
     </div>
     <div v-if="confirmationError" class="sv-feedback sv-error" role="alert">
       {{ $t('sessionViewer.confirmFailed', { error: confirmationError }) }}
+    </div>
+    <div
+      v-if="magpieFeedback"
+      class="sv-feedback"
+      :class="magpieFeedback.error ? 'sv-error' : 'sv-notice'"
+      :role="magpieFeedback.error ? 'alert' : 'status'"
+    >
+      {{ magpieFeedback.text }}
     </div>
     <div
       v-if="deleteResult"
@@ -341,6 +357,8 @@ const deletionPending = ref(false);
 const isDeleting = ref(false);
 const scanError = ref('');
 const scanWarnings = ref<string[]>([]);
+const magpieStoreAvailable = ref(false);
+const magpieFeedback = ref<{ text: string; error: boolean } | null>(null);
 const ccSwitchVerificationPending = ref(false);
 const usageMonitorCleanupPending = ref(false);
 const messageError = ref('');
@@ -422,11 +440,13 @@ async function scanSessions() {
   try {
     const result = await invoke<{
       sessions: SessionMeta[];
+      magpieStoreAvailable: boolean;
       warnings: string[];
       ccSwitchVerificationPending: boolean;
       usageMonitorCleanupPending: boolean;
     }>('scan_sessions');
     sessions.value = result.sessions;
+    magpieStoreAvailable.value = result.magpieStoreAvailable;
     scanWarnings.value = result.warnings;
     ccSwitchVerificationPending.value = result.ccSwitchVerificationPending;
     usageMonitorCleanupPending.value = result.usageMonitorCleanupPending;
@@ -556,10 +576,53 @@ function batchDelete() {
   void deleteSessions(selected, t('sessionViewer.batchDeleteConfirmMessage', { count: selected.length }));
 }
 
+async function confirmDeletion(message: string): Promise<boolean> {
+  try {
+    return await ask(message, {
+      title: t('sessionViewer.deleteConfirmTitle'),
+      kind: 'warning',
+      okLabel: t('sessionViewer.confirmDelete'),
+      cancelLabel: t('sessionViewer.cancel'),
+    });
+  } catch (error) {
+    confirmationError.value = errorMessage(error);
+    return false;
+  }
+}
+
+async function cleanMagpieProbes() {
+  if (actionsBusy.value) return;
+  deletionPending.value = true;
+  confirmationError.value = '';
+  magpieFeedback.value = null;
+  try {
+    const preview = await invoke<{ store: string; ids: string[] } | null>('preview_magpie_probes');
+    if (!preview?.ids.length) {
+      magpieFeedback.value = { text: t('sessionViewer.noMagpieProbes'), error: false };
+      return;
+    }
+    const { store, ids } = preview;
+    const message = t('sessionViewer.confirmMagpieProbes', { count: ids.length, store });
+    if (!await confirmDeletion(message)) return;
+
+    isDeleting.value = true;
+    deleteResult.value = null;
+    const { warnings } = await invoke<{ warnings: string[] }>('delete_magpie_probes', { ids });
+    deleteResult.value = { deleted: ids.length, orphanIndexesDeleted: 0, failures: [], warnings };
+    await scanSessions();
+  } catch (error) {
+    magpieFeedback.value = { text: t('sessionViewer.cleanMagpieFailed', { error: errorMessage(error) }), error: true };
+  } finally {
+    isDeleting.value = false;
+    deletionPending.value = false;
+  }
+}
+
 async function deleteSessions(targets: SessionMeta[], message: string) {
   if (actionsBusy.value) return;
   deletionPending.value = true;
   confirmationError.value = '';
+  magpieFeedback.value = null;
   try {
     const selectedKeys = new Set(targets.map(sessionKey));
     const fullIds = new Set(targets.filter(session => !session.indexOnly)
@@ -584,19 +647,7 @@ async function deleteSessions(targets: SessionMeta[], message: string) {
       options.ccSwitch && t('sessionViewer.confirmCcSwitch'),
       options.usageMonitor && t('sessionViewer.confirmUsageMonitor'),
     ].filter(Boolean);
-    let confirmed: boolean;
-    try {
-      confirmed = await ask([message, ...extras].join('\n\n'), {
-        title: t('sessionViewer.deleteConfirmTitle'),
-        kind: 'warning',
-        okLabel: t('sessionViewer.confirmDelete'),
-        cancelLabel: t('sessionViewer.cancel'),
-      });
-    } catch (error) {
-      confirmationError.value = errorMessage(error);
-      return;
-    }
-    if (!confirmed) return;
+    if (!await confirmDeletion([message, ...extras].join('\n\n'))) return;
 
     isDeleting.value = true;
     deleteResult.value = null;
@@ -704,7 +755,9 @@ async function deleteSessions(targets: SessionMeta[], message: string) {
 .sv-header-actions {
   display: flex;
   align-items: center;
+  justify-content: flex-end;
   flex-wrap: wrap;
+  flex: 1;
   gap: 8px;
   min-width: 0;
 }
@@ -839,6 +892,15 @@ async function deleteSessions(targets: SessionMeta[], message: string) {
 
 .sv-options-label {
   margin-right: 2px;
+}
+
+.sv-options-action {
+  margin-inline-start: auto;
+}
+
+.sv-options .sv-chip,
+.sv-options-action {
+  white-space: nowrap;
 }
 
 .sv-chip {
@@ -1296,13 +1358,20 @@ async function deleteSessions(targets: SessionMeta[], message: string) {
   user-select: text;
 }
 
+@media (max-width: 960px) {
+  .sv-search { flex-basis: 150px; }
+  .sv-options { column-gap: 4px; }
+  .sv-options .sv-chip { gap: 5px; padding-inline: 6px; }
+  .sv-options-action { padding-inline: 11px; }
+}
+
 @media (max-width: 760px) {
+  .sv-header-actions { flex-basis: 100%; }
   .sv-msg-ids { flex-wrap: wrap; }
   .sv-session-id { white-space: normal; overflow-wrap: anywhere; flex-shrink: 1; }
 }
 
 @media (max-width: 620px) {
-  .sv-header-actions { width: 100%; }
   .sv-search { flex: 1 1 120px; }
 
   .sv-body {

@@ -3,7 +3,7 @@
 //! Browse and clean local Antigravity App and Antigravity CLI sessions
 
 use super::antigravity_store::{CLI, DESKTOP};
-use super::{antigravity_clean, antigravity_scan, index_only};
+use super::{antigravity_clean, antigravity_scan, index_only, magpie_probes};
 
 use serde::{Deserialize, Serialize};
 use std::cmp::Reverse;
@@ -35,8 +35,10 @@ pub struct RecoveryStatus {
 
 /// Scan results, with the stores whose interrupted cleanup could not be recovered
 #[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
 pub struct SessionList {
     pub sessions: Vec<SessionMeta>,
+    pub magpie_store_available: bool,
     #[serde(flatten)]
     pub recovery: RecoveryStatus,
 }
@@ -73,6 +75,14 @@ pub struct DeleteReport {
     pub recovery: RecoveryStatus,
 }
 
+/// Magpie model probes included in the deletion confirmation
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct MagpieProbePreview {
+    pub store: PathBuf,
+    pub ids: Vec<String>,
+}
+
 /// A single session message
 #[derive(Debug, Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -97,7 +107,12 @@ pub fn scan_sessions() -> Result<SessionList, String> {
         sessions.append(&mut antigravity_scan::scan(&home, provider)?);
     }
     sessions.sort_by_key(|session| Reverse(session.last_active_at));
-    Ok(SessionList { sessions, recovery })
+    let magpie_store_available = antigravity_clean::recover_magpie_pending(&home, &mut recovery);
+    Ok(SessionList {
+        sessions,
+        magpie_store_available,
+        recovery,
+    })
 }
 
 /// Load a session's messages on demand
@@ -130,4 +145,35 @@ pub fn delete_sessions(
         orphan_indexes.as_deref().unwrap_or_default(),
         options.unwrap_or_default(),
     ))
+}
+
+/// Preview empty model probes in Magpie's separate agy store
+#[tauri::command(async)]
+pub fn preview_magpie_probes() -> Result<Option<MagpieProbePreview>, String> {
+    magpie_probes::root(&home_dir()?)
+        .and_then(|store| store.map(magpie_probes::preview).transpose())
+        .map_err(|error| error.to_string())
+}
+
+/// Recheck and delete only the Magpie probes included in the confirmation
+#[tauri::command(async)]
+pub fn delete_magpie_probes(ids: Vec<String>) -> Result<RecoveryStatus, String> {
+    antigravity_clean::delete_magpie_probes(&home_dir()?, &ids).map_err(|error| error.to_string())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn session_list_serializes_the_magpie_button_flag_for_the_viewer() {
+        let response = SessionList {
+            sessions: Vec::new(),
+            magpie_store_available: true,
+            recovery: RecoveryStatus::default(),
+        };
+        let json = serde_json::to_value(response).unwrap();
+        assert_eq!(json["magpieStoreAvailable"], true);
+        assert!(json.get("magpie_store_available").is_none());
+    }
 }
