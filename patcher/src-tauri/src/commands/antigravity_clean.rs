@@ -1,8 +1,12 @@
+//! Coordinate session deletion, index cleanup, and cleanup recovery
+
 use super::antigravity_scan::live_ids;
 use super::antigravity_store::{
     checked_file, checked_path, locate, roots, valid_id, CLI, DESKTOP, INDEX_DB, METADATA,
 };
+use super::cc_switch;
 use super::cleanup_extras::{self, Cleaned};
+use super::index_only;
 use super::sessions::{CleanOptions, DeleteReport, RecoveryStatus, SessionRef};
 use super::usage_monitor::{self, CacheCleanup};
 use rusqlite::{Connection, OpenFlags, OptionalExtension, TransactionBehavior};
@@ -43,7 +47,7 @@ impl std::fmt::Display for StoreWide {
 
 impl std::error::Error for StoreWide {}
 
-fn store_wide(error: impl ToString) -> Box<dyn std::error::Error> {
+pub(super) fn store_wide(error: impl ToString) -> Box<dyn std::error::Error> {
     Box::new(StoreWide(error.to_string()))
 }
 
@@ -53,30 +57,99 @@ enum Client {
     Ide,
 }
 
-/// Delete sessions and clean related external app data
-pub(super) fn delete(home: &Path, sessions: &[SessionRef], options: CleanOptions) -> DeleteReport {
-    let (errors, cleaned_roots) = delete_with(home, sessions, options, require_clients_closed);
-    let mut recovery = RecoveryStatus::default();
+#[derive(Clone, Copy)]
+enum Scope<'a> {
+    Selected,
+    MatchingIndexes,
+    HistoricalIndexes(&'a Path),
+}
+
+/// Delete sessions, clean leftover indexes, and update external app data
+pub(super) fn delete(
+    home: &Path,
+    sessions: &[SessionRef],
+    matching_indexes: &[SessionRef],
+    orphan_indexes: &[SessionRef],
+    options: CleanOptions,
+) -> DeleteReport {
+    let (mut report, cleaned_roots) = delete_with_indexes(
+        home,
+        sessions,
+        matching_indexes,
+        orphan_indexes,
+        options,
+        require_clients_closed,
+    );
     for root in cleaned_roots {
-        recover_store(home, &root, &mut recovery);
+        recover_store(home, &root, &mut report.recovery);
     }
-    DeleteReport { errors, recovery }
+    report
+}
+
+fn delete_with_indexes(
+    home: &Path,
+    sessions: &[SessionRef],
+    matching_indexes: &[SessionRef],
+    orphan_indexes: &[SessionRef],
+    options: CleanOptions,
+    check_clients: impl Fn() -> Result<()>,
+) -> (DeleteReport, BTreeSet<PathBuf>) {
+    let (errors, mut cleaned) =
+        delete_with(home, sessions, options, Scope::Selected, &check_clients);
+    let mut report = DeleteReport {
+        errors,
+        recovery: RecoveryStatus::default(),
+        orphan_indexes_deleted: 0,
+    };
+    if cleaned.is_empty() {
+        return (report, cleaned);
+    }
+    let targets = index_only::targets_after_deletion(
+        sessions,
+        &report.errors,
+        matching_indexes,
+        orphan_indexes,
+    );
+    for (indexes, scope) in [
+        (&targets.matching, Scope::MatchingIndexes),
+        (&targets.historical, Scope::HistoricalIndexes(home)),
+    ] {
+        if indexes.is_empty() {
+            continue;
+        }
+        let (index_errors, index_roots) =
+            delete_with(home, indexes, options, scope, &check_clients);
+        cleaned.extend(index_roots);
+        for (session, error) in indexes.iter().zip(index_errors) {
+            if let Some(error) = error {
+                report.recovery.warnings.push(format!(
+                    "Could not clean index at {}: {error}",
+                    session.source_path.display()
+                ));
+            } else if matches!(scope, Scope::HistoricalIndexes(_)) {
+                report.orphan_indexes_deleted += 1;
+            }
+        }
+    }
+    (report, cleaned)
 }
 
 fn delete_with(
     home: &Path,
     sessions: &[SessionRef],
     options: CleanOptions,
+    scope: Scope<'_>,
     check_clients: impl Fn() -> Result<()>,
-) -> (Vec<Option<String>>, Vec<PathBuf>) {
+) -> (Vec<Option<String>>, BTreeSet<PathBuf>) {
     let mut results = vec![None; sessions.len()];
-    let mut cleaned = Vec::new();
-    let mut stores = BTreeMap::<_, Vec<(usize, String)>>::new();
+    let mut cleaned = BTreeSet::new();
+    let mut stores = BTreeMap::<_, Vec<_>>::new();
     for (i, session) in sessions.iter().enumerate() {
         match locate_store(home, session) {
-            Ok((root, id)) => {
+            Ok(root) => {
                 let store = (root, index_name(&session.provider_id));
-                stores.entry(store).or_default().push((i, id));
+                let target = (session.session_id.as_str(), session.index_only);
+                stores.entry(store).or_default().push((i, target));
             }
             Err(error) => results[i] = Some(error),
         }
@@ -88,17 +161,17 @@ fn delete_with(
         return (results, cleaned);
     }
     for ((root, index), group) in stores {
-        let ids: Vec<&str> = group.iter().map(|(_, id)| id.as_str()).collect();
+        let targets: Vec<_> = group.iter().map(|(_, target)| *target).collect();
         let mut committed = false;
-        match clean(&root, index, &ids, options, &check_clients) {
+        match clean(&root, index, &targets, options, scope, &check_clients) {
             Ok(()) => committed = true,
             Err(error) => {
                 // Retry sessions individually on failure, but skip retries for store-wide errors
                 let mut error =
                     (group.len() == 1 || error.is::<StoreWide>()).then(|| error.to_string());
-                for (i, id) in &group {
+                for (i, target) in &group {
                     results[*i] = error.clone().or_else(|| {
-                        match clean(&root, index, &[id], options, &check_clients) {
+                        match clean(&root, index, &[*target], options, scope, &check_clients) {
                             Ok(()) => {
                                 committed = true;
                                 None
@@ -115,25 +188,21 @@ fn delete_with(
             }
         }
         if committed {
-            cleaned.push(root);
+            cleaned.insert(root);
         }
     }
     (results, cleaned)
 }
 
-fn locate_store(
-    home: &Path,
-    session: &SessionRef,
-) -> std::result::Result<(PathBuf, String), String> {
+fn locate_store(home: &Path, session: &SessionRef) -> std::result::Result<PathBuf, String> {
     let (root, id) = locate(home, &session.provider_id, &session.source_path)?;
     if id != session.session_id {
         return Err("Antigravity conversation ID does not match its source".into());
     }
     let relative = root.strip_prefix(home).map_err(|error| error.to_string())?;
-    let root = checked_path(home, relative)
+    checked_path(home, relative)
         .map_err(|error| error.to_string())?
-        .ok_or("Antigravity session store no longer exists")?;
-    Ok((root, id))
+        .ok_or_else(|| "Antigravity session store no longer exists".into())
 }
 
 pub(super) fn index_name(provider_id: &str) -> &'static str {
@@ -192,14 +261,9 @@ fn running_clients() -> Result<Running> {
         if let Some(client) = client(&name, &path) {
             running.clients[client as usize] = true;
         }
-        running.cc_switch |= is_cc_switch(&name);
+        running.cc_switch |= cc_switch::is_process_name(&name);
     }
     Ok(running)
-}
-
-fn is_cc_switch(name: &str) -> bool {
-    let name = name.to_ascii_lowercase();
-    matches!(name.trim_end_matches(".exe"), "cc-switch" | "cc switch")
 }
 
 // Antigravity IDE is out of scope, but it still blocks cleanup while it runs
@@ -225,8 +289,9 @@ fn client(name: &str, path: &str) -> Option<Client> {
 fn clean(
     root: &Path,
     index: &str,
-    ids: &[&str],
+    targets: &[(&str, bool)],
     options: CleanOptions,
+    scope: Scope<'_>,
     check_clients: impl Fn() -> Result<()>,
 ) -> Result<()> {
     check_clients().map_err(store_wide)?;
@@ -236,8 +301,9 @@ fn clean(
         clean_locked(
             root,
             index,
-            ids,
+            targets,
             options,
+            scope,
             check_clients,
             connection.as_mut(),
         )
@@ -414,7 +480,7 @@ fn replay_extras(
                 File::create_new(&pending)?.sync_all()?;
                 verify = true;
             }
-            let result = cleanup_extras::clean_sync(home, &group, cc_running);
+            let result = cc_switch::clean(home, &group, cc_running);
             swept = true;
             receipt.options.cc_switch = !result.targets_done;
             // An incomplete orphan sweep can retry without retaining selected IDs
@@ -451,7 +517,7 @@ fn replay_extras(
             root: root.to_owned(),
             ids: BTreeSet::new(),
         };
-        let errors = cleanup_extras::clean_sync(home, &group, cc_running).warnings;
+        let errors = cc_switch::clean(home, &group, cc_running).warnings;
         if errors.is_empty() && !cc_running {
             fs::remove_file(pending)?;
         }
@@ -505,8 +571,9 @@ pub(super) fn with_store_lock<T>(
 fn clean_locked(
     root: &Path,
     index: &str,
-    ids: &[&str],
+    targets: &[(&str, bool)],
     options: CleanOptions,
+    scope: Scope<'_>,
     check_clients: impl Fn() -> Result<()>,
     connection: Option<&mut Connection>,
 ) -> Result<()> {
@@ -516,9 +583,49 @@ fn clean_locked(
         .map(|conn| conn.transaction_with_behavior(TransactionBehavior::Immediate))
         .transpose()
         .map_err(store_wide)?;
-    let ids = related_ids(tx.as_deref(), ids)?;
+    let selected: Vec<_> = targets.iter().map(|(id, _)| *id).collect();
+    let related = related_ids(tx.as_deref(), &selected)?;
+    let ids = if matches!(scope, Scope::HistoricalIndexes(_)) {
+        selected.into_iter().map(str::to_owned).collect()
+    } else {
+        related.clone()
+    };
     let presence = lock_presence(root, &ids)?;
-    let mut files = session_files(root, &ids)?;
+    let only_indexes = !matches!(scope, Scope::Selected);
+    let index_only_ids = if only_indexes {
+        ids.clone()
+    } else {
+        targets
+            .iter()
+            .filter(|(_, index_only)| *index_only)
+            .map(|(id, _)| (*id).to_owned())
+            .collect()
+    };
+    let placeholders = session_files(root, &index_only_ids)?;
+    let presence_dir = root.join("presence");
+    let mut checked_files = Vec::new();
+    for (i, path) in placeholders.iter().enumerate() {
+        if path.parent() != Some(presence_dir.as_path()) {
+            index_only::require_empty_path(path)?;
+            checked_files.push(i);
+        }
+    }
+    let mut files = if only_indexes {
+        Vec::new()
+    } else {
+        let mut files = placeholders;
+        let remaining = ids.difference(&index_only_ids).cloned().collect();
+        files.extend(session_files(root, &remaining)?);
+        files
+    };
+    let brain = root.join("brain");
+    let attachment_ids = files
+        .iter()
+        .filter(|path| path.parent() == Some(brain.as_path()))
+        .filter_map(|path| path.file_name()?.to_str().map(str::to_ascii_lowercase))
+        .collect();
+    let archives = usage_monitor::migration_archives(root, &attachment_ids)?;
+    usage_monitor::protect_moved_attachments(root, &archives)?;
     let mut replacements = Vec::new();
     if let Some(path) = checked_file(root, index)? {
         let original = fs::read(&path)?;
@@ -563,6 +670,26 @@ fn clean_locked(
         stage.write_receipt(&receipt)?;
         stage.apply(root, &replacements)?;
         check_clients().map_err(store_wide)?;
+        index_only::require_no_session_data(root, &index_only_ids)?;
+        if !only_indexes {
+            // An empty placeholder can gain data before it is moved to the staging directory
+            for i in checked_files {
+                index_only::require_empty_path(&stage.saved_file(i)).map_err(|error| {
+                    format!(
+                        "{} changed during cleanup: {error}",
+                        stage.plan.files[i].path.display()
+                    )
+                })?;
+            }
+        }
+        let _orphan_locks = match scope {
+            Scope::HistoricalIndexes(home) => {
+                index_only::lock_historical_sources(home, root, &related)?
+            }
+            _ => Vec::new(),
+        };
+        // Staging moved the source `.db`, so only an archive written during cleanup counts here
+        usage_monitor::protect_new_archives(root, &attachment_ids, &archives)?;
         stage.commit(tx)
     })();
     drop(presence);
@@ -707,7 +834,7 @@ fn lock_presence(root: &Path, ids: &BTreeSet<String>) -> Result<Vec<File>> {
     Ok(locks)
 }
 
-fn session_files(root: &Path, ids: &BTreeSet<String>) -> Result<Vec<PathBuf>> {
+pub(super) fn session_files(root: &Path, ids: &BTreeSet<String>) -> Result<Vec<PathBuf>> {
     let mut files = Vec::new();
     for id in ids {
         for relative in session_artifacts(id) {
@@ -1156,6 +1283,10 @@ impl PlannedFile {
 }
 
 impl Stage {
+    fn saved_file(&self, i: usize) -> PathBuf {
+        self.dir.join(format!("saved-{i}"))
+    }
+
     fn deleted_databases(&self) -> BTreeSet<PathBuf> {
         self.plan
             .files
@@ -1235,7 +1366,7 @@ impl Stage {
         for (i, file) in self.plan.files.iter().enumerate() {
             let path = checked_path(root, &file.path)?
                 .ok_or_else(|| format!("Session file disappeared: {}", file.path.display()))?;
-            let backup = self.dir.join(format!("saved-{i}"));
+            let backup = self.saved_file(i);
             fs::rename(&path, &backup)?;
             if file.replace {
                 let replacement = replacements.next().ok_or("Missing index replacement")?;
@@ -1335,6 +1466,7 @@ impl Stage {
 
 #[cfg(test)]
 mod tests {
+    use super::super::antigravity_scan::store_index_ids;
     use super::super::antigravity_store::APP_DATA;
     use super::*;
     use std::cell::Cell;
@@ -1352,6 +1484,24 @@ mod tests {
 
     fn replay_extras(home: &Path, root: &Path, cc_running: bool) -> Result<Vec<String>> {
         super::replay_extras(home, root, cc_running, || Ok(false)).map(|status| status.warnings)
+    }
+
+    fn clean(
+        root: &Path,
+        index: &str,
+        ids: &[&str],
+        options: CleanOptions,
+        check_clients: impl Fn() -> Result<()>,
+    ) -> Result<()> {
+        let targets: Vec<_> = ids.iter().map(|id| (*id, false)).collect();
+        super::clean(
+            root,
+            index,
+            &targets,
+            options,
+            Scope::Selected,
+            check_clients,
+        )
     }
 
     fn store() -> tempfile::TempDir {
@@ -1454,6 +1604,125 @@ mod tests {
                 .unwrap();
             assert_eq!(rows, expected, "{table}");
         }
+    }
+
+    #[test]
+    fn keeps_migrated_source_attachments_and_deletes_other_selected_sessions() {
+        let home = tempfile::tempdir().unwrap();
+        let cli = home.path().join(".gemini/antigravity-cli");
+        let archives = home.path().join(
+            ".gemini/antigravity/sidecar_data/usage-monitor/panel/data/session-migration-backups/archived-sources",
+        );
+        for (source, id) in [("cli", TARGET), ("desktop", FORK)] {
+            let archive = archives.join(source);
+            fs::create_dir_all(&archive).unwrap();
+            fs::write(
+                archive.join(format!("{id}_2026-11-24T00-00-00-000Z.db")),
+                b"snapshot",
+            )
+            .unwrap();
+            let brain = cli.join("brain").join(id);
+            fs::create_dir_all(&brain).unwrap();
+            fs::write(brain.join("attachment.png"), b"attachment").unwrap();
+        }
+        let sessions = [TARGET, FORK].map(|id| SessionRef {
+            provider_id: CLI.into(),
+            session_id: id.into(),
+            source_path: cli.join("conversations").join(format!("{id}.db")),
+            index_only: false,
+        });
+
+        let (errors, cleaned) = delete_with(
+            home.path(),
+            &sessions,
+            CleanOptions::default(),
+            Scope::Selected,
+            || Ok(()),
+        );
+        assert!(errors[0]
+            .as_deref()
+            .unwrap()
+            .contains("Usage Monitor archived session"));
+        assert!(errors[1].is_none());
+        assert_eq!(cleaned, BTreeSet::from([cli.clone()]));
+        assert!(cli
+            .join("brain")
+            .join(TARGET)
+            .join("attachment.png")
+            .is_file());
+        assert!(!cli.join("brain").join(FORK).exists());
+    }
+
+    #[test]
+    fn rolls_back_cleanup_if_a_migration_archive_appears_before_commit() {
+        let home = tempfile::tempdir().unwrap();
+        let base = home.path().join(".gemini");
+        fs::create_dir(&base).unwrap();
+        let desktop = base.join("antigravity");
+        fs::rename(store().keep(), &desktop).unwrap();
+        let brain = desktop.join("brain").join(TARGET);
+        let archive = base.join(
+            "antigravity-cli/sidecar_data/usage-monitor/panel/data/session-migration-backups/archived-sources/desktop",
+        );
+
+        let error = clean(
+            &desktop,
+            DESKTOP_INDEX,
+            &[TARGET],
+            CleanOptions::default(),
+            || {
+                if !brain.exists() {
+                    fs::create_dir_all(&archive)?;
+                    fs::write(
+                        archive.join(format!("{TARGET}_2026-11-24T00-00-00-000Z.db")),
+                        b"snapshot",
+                    )?;
+                }
+                Ok(())
+            },
+        )
+        .unwrap_err();
+        assert!(error.to_string().contains("Usage Monitor archived session"));
+        assert!(brain.join("transcript.jsonl").is_file());
+        assert!(desktop
+            .join("conversations")
+            .join(format!("{TARGET}.db"))
+            .is_file());
+        assert_rows(&desktop, &[TARGET, FORK, NESTED]);
+        assert!(recovery_dirs(&desktop).unwrap().is_empty());
+    }
+
+    #[test]
+    fn deletes_a_session_whose_migration_failed_after_archiving() {
+        let home = tempfile::tempdir().unwrap();
+        let base = home.path().join(".gemini");
+        fs::create_dir(&base).unwrap();
+        let desktop = base.join("antigravity");
+        fs::rename(store().keep(), &desktop).unwrap();
+        // The archive stays when the target write fails, but the source keeps its `.db`
+        let archive = base.join(
+            "antigravity/sidecar_data/usage-monitor/panel/data/session-migration-backups/archived-sources/desktop",
+        );
+        fs::create_dir_all(&archive).unwrap();
+        fs::write(
+            archive.join(format!("{TARGET}_2026-11-24T00-00-00-000Z.db")),
+            b"snapshot",
+        )
+        .unwrap();
+
+        clean(
+            &desktop,
+            DESKTOP_INDEX,
+            &[TARGET],
+            CleanOptions::default(),
+            || Ok(()),
+        )
+        .unwrap();
+        assert!(!desktop.join("brain").join(TARGET).exists());
+        assert!(!desktop
+            .join("conversations")
+            .join(format!("{TARGET}.db"))
+            .exists());
     }
 
     #[test]
@@ -2142,6 +2411,271 @@ mod tests {
     }
 
     #[test]
+    fn clears_matching_indexes_after_deletion_and_keeps_complete_copies() {
+        let temp = tempfile::tempdir().unwrap();
+        let home = temp.path();
+        let app = home.join(".gemini/antigravity");
+        let cli = home.join(".gemini/antigravity-cli");
+        let profile = home.join(".cc-switch/agy/example/antigravity-cli");
+        fs::create_dir_all(cli.join("conversations")).unwrap();
+        fs::create_dir_all(profile.parent().unwrap()).unwrap();
+        fs::rename(store().keep(), &app).unwrap();
+        fs::rename(store().keep(), &profile).unwrap();
+        fs::write(
+            cli.join(CLI_INDEX),
+            [summary_entry(TARGET, false), summary_entry(FORK, false)].concat(),
+        )
+        .unwrap();
+        let session = |root: &Path, provider: &str, id: &str, index_only| SessionRef {
+            provider_id: provider.into(),
+            session_id: id.into(),
+            source_path: root.join("conversations").join(format!("{id}.db")),
+            index_only,
+        };
+        let selected = [session(&app, DESKTOP, TARGET, false)];
+        let matches = [
+            session(&cli, CLI, TARGET, true),
+            session(&profile, CLI, TARGET, true),
+            session(&cli, CLI, FORK, true),
+        ];
+        fs::write(&matches[0].source_path, []).unwrap();
+        fs::create_dir_all(cli.join("brain").join(TARGET).join("empty")).unwrap();
+
+        let (report, cleaned) = delete_with_indexes(
+            home,
+            &selected,
+            &matches,
+            &[],
+            CleanOptions::default(),
+            || Err("client running".into()),
+        );
+        assert_eq!(report.errors, [Some("client running".into())]);
+        assert!(cleaned.is_empty() && report.recovery.warnings.is_empty());
+        assert!(fs::read(cli.join(CLI_INDEX))
+            .unwrap()
+            .windows(TARGET.len())
+            .any(|bytes| bytes == TARGET.as_bytes()));
+
+        let (report, cleaned) = delete_with_indexes(
+            home,
+            &selected,
+            &matches,
+            &[],
+            CleanOptions::default(),
+            || Ok(()),
+        );
+        assert_eq!(report.errors, [None]);
+        assert_eq!(cleaned, BTreeSet::from([app.clone(), cli.clone()]));
+        assert_eq!(report.recovery.warnings.len(), 1);
+        assert!(report.recovery.warnings[0].contains("Session data is present"));
+        assert_rows(&app, &[FORK]);
+        assert_eq!(
+            fs::read(cli.join(CLI_INDEX)).unwrap(),
+            summary_entry(FORK, false)
+        );
+        assert_rows(&profile, &[TARGET, FORK, NESTED]);
+        assert_eq!(fs::read(&matches[1].source_path).unwrap(), b"example");
+    }
+
+    #[test]
+    fn selected_index_only_placeholder_can_gain_data_during_cleanup() {
+        let home = tempfile::tempdir().unwrap();
+        let home = home.path();
+        fs::create_dir(home.join(".gemini")).unwrap();
+        let root = home.join(".gemini/antigravity");
+        fs::rename(store().keep(), &root).unwrap();
+        for path in session_files(&root, &BTreeSet::from([FORK.to_owned()])).unwrap() {
+            if path.is_dir() {
+                fs::remove_dir_all(path).unwrap();
+            } else {
+                fs::remove_file(path).unwrap();
+            }
+        }
+        let targets = [(TARGET, false), (FORK, true)].map(|(id, index_only)| SessionRef {
+            provider_id: DESKTOP.to_owned(),
+            source_path: root.join("conversations").join(format!("{id}.db")),
+            session_id: id.to_owned(),
+            index_only,
+        });
+        let placeholder = &targets[1].source_path;
+        fs::write(placeholder, []).unwrap();
+        let checks = Cell::new(0);
+        let (report, _) =
+            delete_with_indexes(home, &targets, &[], &[], CleanOptions::default(), || {
+                checks.set(checks.get() + 1);
+                if checks.get() == 3 {
+                    fs::write(placeholder, b"newly synced")?;
+                }
+                Ok(())
+            });
+        assert_eq!(report.errors[0], None);
+        assert!(report.errors[1]
+            .as_deref()
+            .unwrap()
+            .contains("Session data is present"));
+        assert_eq!(fs::read(placeholder).unwrap(), b"newly synced");
+        assert_rows(&root, &[FORK]);
+
+        fs::write(placeholder, []).unwrap();
+        let (report, _) = delete_with_indexes(
+            home,
+            &targets[1..],
+            &[],
+            &[],
+            CleanOptions::default(),
+            || Ok(()),
+        );
+        assert_eq!(report.errors, [None]);
+        assert!(!placeholder.exists());
+        assert_rows(&root, &[]);
+    }
+
+    #[test]
+    fn matching_index_cleanup_rolls_back_if_a_copy_appears() {
+        let temp = tempfile::tempdir().unwrap();
+        let root = temp.path();
+        fs::create_dir(root.join("conversations")).unwrap();
+        let proto = summary_entry(TARGET, false);
+        fs::write(root.join(CLI_INDEX), &proto).unwrap();
+        let conversation = root.join("conversations").join(format!("{TARGET}.db"));
+        let checks = Cell::new(0);
+
+        let error = super::clean(
+            root,
+            CLI_INDEX,
+            &[(TARGET, true)],
+            CleanOptions::default(),
+            Scope::MatchingIndexes,
+            || {
+                checks.set(checks.get() + 1);
+                if checks.get() == 3 {
+                    fs::write(&conversation, b"newly synced")?;
+                }
+                Ok(())
+            },
+        )
+        .unwrap_err();
+        assert!(error.to_string().contains("Session data is present"));
+        assert_eq!(fs::read(root.join(CLI_INDEX)).unwrap(), proto);
+        assert_eq!(fs::read(conversation).unwrap(), b"newly synced");
+    }
+
+    #[test]
+    fn historical_cleanup_only_clears_approved_unbacked_indexes_after_a_successful_deletion() {
+        const ORPHAN: &str = "00000000-0000-4000-8000-000000000004";
+        const ARCHIVED: &str = "00000000-0000-4000-8000-000000000005";
+        const LATER: &str = "00000000-0000-4000-8000-000000000006";
+        let temp = tempfile::tempdir().unwrap();
+        let home = temp.path();
+        let app = home.join(".gemini/antigravity");
+        let cli = home.join(".gemini/antigravity-cli");
+        let profile = home.join(".cc-switch/agy/example/antigravity-cli");
+        fs::create_dir_all(cli.join("cache")).unwrap();
+        fs::create_dir_all(profile.join("brain").join(NESTED)).unwrap();
+        fs::rename(store().keep(), &app).unwrap();
+        let archive = app.join(
+            "sidecar_data/usage-monitor/panel/data/session-migration-backups/archived-sources/cli",
+        );
+        fs::create_dir_all(&archive).unwrap();
+        fs::write(
+            archive.join(format!("{ARCHIVED}_2026-11-24T00-00-00-000Z.db")),
+            b"archive",
+        )
+        .unwrap();
+        let write_index = |ids: &[&str]| {
+            let bytes: Vec<_> = ids.iter().flat_map(|id| summary_entry(id, false)).collect();
+            fs::write(cli.join(CLI_INDEX), bytes).unwrap();
+        };
+        write_index(&[TARGET, NESTED, FORK, ORPHAN, ARCHIVED]);
+        let selected = [SessionRef {
+            provider_id: DESKTOP.into(),
+            source_path: app.join("conversations").join(format!("{TARGET}.db")),
+            session_id: TARGET.into(),
+            index_only: false,
+        }];
+
+        let preview = index_only::preview(home, &[TARGET.into()]).unwrap();
+        assert_eq!(preview.len(), 1);
+        assert_eq!(preview[0].session_id, ORPHAN);
+        write_index(&[TARGET, NESTED, FORK, ORPHAN, ARCHIVED, LATER]);
+        let (report, _) = delete_with_indexes(
+            home,
+            &selected,
+            &[],
+            &preview,
+            CleanOptions::default(),
+            || Err("client running".into()),
+        );
+        assert!(report.recovery.warnings.is_empty());
+        assert_eq!(report.orphan_indexes_deleted, 0);
+        assert_eq!(
+            index_only::preview(home, &[TARGET.into()]).unwrap().len(),
+            2
+        );
+
+        let (report, _) = delete_with_indexes(
+            home,
+            &selected,
+            &[],
+            &preview,
+            CleanOptions::default(),
+            || Ok(()),
+        );
+        assert_eq!(report.errors, [None]);
+        assert!(report.recovery.warnings.is_empty());
+        assert_eq!(report.orphan_indexes_deleted, 1);
+        let remaining = store_index_ids(&cli, CLI).unwrap();
+        assert_eq!(
+            remaining,
+            [TARGET, NESTED, FORK, ARCHIVED, LATER]
+                .map(str::to_owned)
+                .into()
+        );
+        assert_rows(&app, &[FORK]);
+    }
+
+    #[test]
+    fn historical_cleanup_rechecks_other_stores_before_committing() {
+        let temp = tempfile::tempdir().unwrap();
+        let home = temp.path();
+        let app = home.join(".gemini/antigravity");
+        let cli = home.join(".gemini/antigravity-cli");
+        fs::create_dir_all(app.join("conversations")).unwrap();
+        fs::create_dir_all(&cli).unwrap();
+        fs::write(cli.join(CLI_INDEX), summary_entry(TARGET, false)).unwrap();
+        assert_eq!(index_only::preview(home, &[]).unwrap().len(), 1);
+        let checks = Cell::new(0);
+        let conversation = app.join("conversations").join(format!("{TARGET}.db"));
+        let error = super::clean(
+            &cli,
+            CLI_INDEX,
+            &[(TARGET, true)],
+            CleanOptions::default(),
+            Scope::HistoricalIndexes(home),
+            || {
+                checks.set(checks.get() + 1);
+                if checks.get() == 3 {
+                    fs::write(&conversation, b"newly synced")?;
+                }
+                Ok(())
+            },
+        )
+        .unwrap_err();
+        assert!(error.to_string().contains("Session data"));
+        assert_eq!(
+            fs::read(cli.join(CLI_INDEX)).unwrap(),
+            summary_entry(TARGET, false)
+        );
+        assert_eq!(fs::read(conversation).unwrap(), b"newly synced");
+
+        fs::create_dir(app.join(format!("{STAGE_PREFIX}interrupted"))).unwrap();
+        assert!(index_only::preview(home, &[])
+            .unwrap_err()
+            .to_string()
+            .contains("cleanup is in progress"));
+    }
+
+    #[test]
     fn cleans_several_sessions_in_one_pass() {
         let temp = store();
         let root = temp.path();
@@ -2178,18 +2712,29 @@ mod tests {
             provider_id: DESKTOP.to_owned(),
             source_path: root.join("conversations").join(format!("{id}.db")),
             session_id: id.to_owned(),
+            index_only: false,
         };
 
         let sessions = [session(TARGET), session(FORK), session("invalid")];
-        let (results, _) = delete_with(home, &sessions, CleanOptions::default(), || Ok(()));
+        let (results, _) = delete_with(
+            home,
+            &sessions,
+            CleanOptions::default(),
+            Scope::Selected,
+            || Ok(()),
+        );
         assert_eq!(results[0], None);
         assert!(results[1].as_deref().unwrap().contains("session directory"));
         assert!(results[2].is_some());
         assert_rows(&root, &[FORK]);
 
-        let (results, _) = delete_with(home, &sessions[1..2], CleanOptions::default(), || {
-            Err("client running".into())
-        });
+        let (results, _) = delete_with(
+            home,
+            &sessions[1..2],
+            CleanOptions::default(),
+            Scope::Selected,
+            || Err("client running".into()),
+        );
         assert_eq!(results, [Some("client running".to_owned())]);
     }
 
@@ -2205,13 +2750,20 @@ mod tests {
             provider_id: DESKTOP.to_owned(),
             source_path: root.join("conversations").join(format!("{id}.db")),
             session_id: id.to_owned(),
+            index_only: false,
         });
 
         let checks = Cell::new(0);
-        let (results, cleaned) = delete_with(home, &sessions, CleanOptions::default(), || {
-            checks.set(checks.get() + 1);
-            Ok(())
-        });
+        let (results, cleaned) = delete_with(
+            home,
+            &sessions,
+            CleanOptions::default(),
+            Scope::Selected,
+            || {
+                checks.set(checks.get() + 1);
+                Ok(())
+            },
+        );
         assert!(cleaned.is_empty());
         for error in results {
             assert!(error.unwrap().contains("summary index format"));
@@ -2427,14 +2979,6 @@ mod tests {
         assert!(!planned("sidecar_data/a/b/logs/sidecar.log", false));
         assert!(!planned("sidecar_data/a/../events/1.json", false));
         assert!(!planned("sidecar_data/a/b/data/settings.json", true));
-    }
-
-    #[test]
-    fn recognizes_cc_switch() {
-        assert!(
-            is_cc_switch("cc-switch") && is_cc_switch("CC Switch") && is_cc_switch("cc-switch.exe")
-        );
-        assert!(!is_cc_switch("cc-switch-helper"));
     }
 
     #[test]

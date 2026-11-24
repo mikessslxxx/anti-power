@@ -3,7 +3,7 @@
 //! Browse and clean local Antigravity App and Antigravity CLI sessions
 
 use super::antigravity_store::{CLI, DESKTOP};
-use super::{antigravity_clean, antigravity_scan};
+use super::{antigravity_clean, antigravity_scan, index_only};
 
 use serde::{Deserialize, Serialize};
 use std::cmp::Reverse;
@@ -41,13 +41,15 @@ pub struct SessionList {
     pub recovery: RecoveryStatus,
 }
 
-/// A session selected for deletion
-#[derive(Debug, Deserialize)]
+/// A session or index record targeted for cleanup
+#[derive(Debug, Clone, Deserialize, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct SessionRef {
     pub provider_id: String,
     pub source_path: PathBuf,
     pub session_id: String,
+    #[serde(default)]
+    pub index_only: bool,
 }
 
 /// Optional cleanup beyond the session stores
@@ -66,6 +68,7 @@ pub struct CleanOptions {
 #[derive(Debug, Serialize)]
 pub struct DeleteReport {
     pub errors: Vec<Option<String>>,
+    pub orphan_indexes_deleted: usize,
     #[serde(flatten)]
     pub recovery: RecoveryStatus,
 }
@@ -106,15 +109,25 @@ pub fn load_session_messages(
     antigravity_scan::load_messages(&home_dir()?, &provider_id, Path::new(&source_path))
 }
 
-/// Delete sessions and optional external data
+/// Preview historical indexes before the user confirms deletion
+#[tauri::command(async)]
+pub fn preview_orphan_indexes(selected_ids: Vec<String>) -> Result<Vec<SessionRef>, String> {
+    index_only::preview(&home_dir()?, &selected_ids).map_err(|error| error.to_string())
+}
+
+/// Delete sessions and the index records included in the confirmation
 #[tauri::command(async)]
 pub fn delete_sessions(
     sessions: Vec<SessionRef>,
+    matching_indexes: Option<Vec<SessionRef>>,
+    orphan_indexes: Option<Vec<SessionRef>>,
     options: Option<CleanOptions>,
 ) -> Result<DeleteReport, String> {
     Ok(antigravity_clean::delete(
         &home_dir()?,
         &sessions,
+        matching_indexes.as_deref().unwrap_or_default(),
+        orphan_indexes.as_deref().unwrap_or_default(),
         options.unwrap_or_default(),
     ))
 }

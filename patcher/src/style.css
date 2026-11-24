@@ -62,189 +62,164 @@
   }
 }
 
-/* Antigravity-inspired base styles */
-
+/* Theme tokens */
 :root {
-  /* Font stacks */
-  --ag-font-sans: ui-sans-serif, system-ui, -apple-system, "SF Pro Text", "SF Pro Display",
-    "Avenir Next", "Segoe UI Variable", "Segoe UI", "Noto Sans", "Ubuntu", "Helvetica Neue", sans-serif;
-  --ag-font-mono: ui-monospace, "JetBrains Mono", "SF Mono", Menlo, Monaco, Consolas, "Liberation Mono",
-    "Courier New", monospace;
+  --ag-font-sans: ui-sans-serif, system-ui, -apple-system, "SF Pro Text", "PingFang SC", "Hiragino Sans GB",
+    "Segoe UI Variable", "Segoe UI", "Microsoft YaHei", "Noto Sans", "Ubuntu", "Helvetica Neue", sans-serif;
+  --ag-font-mono: ui-monospace, "SF Mono", "JetBrains Mono", Menlo, Monaco, "Cascadia Mono", Consolas,
+    "Liberation Mono", monospace;
 
   font-family: var(--ag-font-sans);
   font-size: 14px;
   line-height: 1.6;
   font-weight: 400;
-  font-optical-sizing: auto;
+  font-variant-numeric: tabular-nums;
 
+  --brand-navy: rgb(18, 29, 62);
+  --brand-rust: rgb(176, 59, 40);
+  --brand-bronze: rgb(132, 118, 82);
+
+  /* Dark theme, tinted toward the navy */
   color-scheme: dark;
+  --ag-bg: rgb(13, 17, 28);
+  --ag-surface: rgb(21, 26, 40);
+  --ag-surface-2: rgb(28, 34, 51);
+  --ag-surface-3: rgb(36, 43, 63);
+  --ag-surface-elevated: rgb(25, 31, 47);
 
-  /*
-   * Core palette
-   */
-  --ag-bg: rgb(24, 24, 24);
-  --ag-surface: rgb(31, 31, 31);
-  --ag-text: rgb(204, 204, 204);
-  --ag-accent: rgb(51, 118, 205);
+  --ag-text: rgb(214, 219, 230);
+  --ag-text-strong: rgb(240, 243, 250);
+  --ag-text-secondary: rgba(214, 219, 230, 0.84);
+  --ag-text-tertiary: rgba(214, 219, 230, 0.6);
+  --ag-text-muted: rgba(214, 219, 230, 0.44);
 
-  /* Derived surface colors */
-  --ag-surface-2: rgb(36, 36, 36);
-  --ag-surface-3: rgb(42, 42, 42);
-  --ag-surface-elevated: rgb(38, 38, 38);
+  --ag-border: rgba(160, 175, 215, 0.1);
+  --ag-border-hover: rgba(160, 175, 215, 0.2);
+  --ag-border-active: rgba(140, 162, 228, 0.5);
+  --ag-border-glow: rgba(140, 162, 228, 0.3);
 
-  /* Frosted glass effects */
-  --ag-titlebar-bg: rgba(31, 31, 31, 0.88);
-  --ag-titlebar-border: rgba(255, 255, 255, 0.08);
-  --ag-glass: rgba(31, 31, 31, 0.72);
-  --ag-glass-border: rgba(255, 255, 255, 0.12);
+  /* Accent: the navy lifted so it reads on dark surfaces */
+  --ag-accent: rgb(140, 162, 228);
+  --ag-accent-hover: rgb(164, 182, 238);
+  --ag-accent-active: rgb(120, 144, 214);
+  --ag-accent-solid: rgb(52, 72, 140);
+  --ag-accent-solid-hover: rgb(64, 86, 160);
+  --ag-accent-subtle: rgba(140, 162, 228, 0.12);
+  --ag-accent-glow: rgba(140, 162, 228, 0.22);
+  --ag-accent-gradient: linear-gradient(180deg, rgb(62, 84, 156) 0%, rgb(46, 64, 126) 100%);
+
+  --ag-bronze: rgb(192, 176, 134);
+  --ag-bronze-subtle: rgba(192, 176, 134, 0.13);
+
+  --ag-success: rgb(98, 196, 140);
+  --ag-success-subtle: rgba(98, 196, 140, 0.11);
+  --ag-warning: rgb(224, 172, 84);
+  --ag-warning-subtle: rgba(224, 172, 84, 0.12);
+  --ag-error: rgb(232, 118, 96);
+  --ag-error-solid: rgb(176, 59, 40);
+  --ag-error-subtle: rgba(214, 92, 70, 0.13);
+  --ag-error-border: rgba(232, 118, 96, 0.32);
+
+  --ag-user-bubble: rgb(34, 42, 66);
+  --ag-code-bg: rgba(160, 175, 215, 0.08);
+  --ag-hover: rgba(160, 175, 215, 0.07);
+
+  --ag-titlebar-bg: rgba(13, 17, 28, 0.78);
+  --ag-titlebar-border: rgba(160, 175, 215, 0.08);
+  --ag-glass: rgba(21, 26, 40, 0.72);
+  --ag-glass-border: rgba(160, 175, 215, 0.12);
   --ag-ring: 0 0 0 3px var(--ag-accent-subtle);
 
-  /* Border colors */
-  --ag-border: rgba(255, 255, 255, 0.08);
-  --ag-border-hover: rgba(255, 255, 255, 0.15);
-  --ag-border-active: rgba(51, 118, 205, 0.5);
-  --ag-border-glow: rgba(51, 118, 205, 0.3);
+  --ag-scrollbar-thumb: rgba(160, 175, 215, 0.18);
+  --ag-scrollbar-thumb-hover: rgba(160, 175, 215, 0.3);
 
-  /* Text colors */
-  --ag-text-strong: rgb(255, 255, 255);
-  --ag-text-secondary: rgba(204, 204, 204, 0.82);
-  --ag-text-tertiary: rgba(204, 204, 204, 0.62);
-  --ag-text-muted: rgba(204, 204, 204, 0.46);
-
-  /* Blue accent colors */
-  --ag-accent-hover: rgb(71, 138, 225);
-  --ag-accent-active: rgb(41, 108, 195);
-  --ag-accent-subtle: rgba(51, 118, 205, 0.1);
-  --ag-accent-glow: rgba(51, 118, 205, 0.25);
-  --ag-accent-gradient: linear-gradient(135deg, rgb(51, 118, 205) 0%, rgb(71, 148, 235) 100%);
-
-  /* Status colors */
-  --ag-success: rgb(34, 197, 94);
-  --ag-success-subtle: rgba(34, 197, 94, 0.1);
-  --ag-warning: rgb(245, 158, 11);
-  --ag-warning-subtle: rgba(245, 158, 11, 0.1);
-  --ag-error: rgb(239, 68, 68);
-  --ag-error-subtle: rgba(239, 68, 68, 0.1);
-
-  /* Scrollbar colors */
-  --ag-scrollbar-track: rgb(24, 24, 24);
-  --ag-scrollbar-thumb: rgb(60, 60, 60);
-  --ag-scrollbar-thumb-hover: rgb(80, 80, 80);
-
-  /* Shadows and effects */
   --ag-shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.3);
-  --ag-shadow-md: 0 4px 12px rgba(0, 0, 0, 0.35);
-  --ag-shadow-lg: 0 8px 24px rgba(0, 0, 0, 0.4);
-  --ag-shadow-xl: 0 20px 40px rgba(0, 0, 0, 0.5), 0 8px 16px rgba(0, 0, 0, 0.3);
-  --ag-shadow-accent: 0 4px 20px rgba(51, 118, 205, 0.2);
-  --ag-shadow-accent-lg: 0 8px 32px rgba(51, 118, 205, 0.25);
-  --ag-shadow-card: 0 18px 44px rgba(0, 0, 0, 0.36), 0 1px 0 rgba(255, 255, 255, 0.04) inset;
-  --ag-shadow-inset: inset 0 1px 2px rgba(0, 0, 0, 0.3);
+  --ag-shadow-md: 0 6px 16px rgba(0, 0, 0, 0.32);
+  --ag-shadow-lg: 0 10px 28px rgba(0, 0, 0, 0.38);
+  --ag-shadow-xl: 0 22px 52px rgba(0, 0, 0, 0.42), 0 4px 16px rgba(0, 0, 0, 0.2);
+  --ag-shadow-card: 0 1px 0 rgba(255, 255, 255, 0.03) inset, 0 8px 24px rgba(0, 0, 0, 0.22);
+  --ag-shadow-accent-lg: 0 6px 18px rgba(52, 72, 140, 0.35);
 
-  /* Gradient overlays */
-  --ag-gradient-surface: linear-gradient(180deg, rgba(255, 255, 255, 0.04) 0%, transparent 100%);
-  --ag-gradient-surface-hover: linear-gradient(180deg, rgba(255, 255, 255, 0.06) 0%, transparent 100%);
-  --ag-gradient-glow: radial-gradient(ellipse at 50% 0%, var(--ag-accent-glow) 0%, transparent 70%);
-  --ag-gradient-shine: linear-gradient(135deg, rgba(255, 255, 255, 0.1) 0%, transparent 50%, rgba(255, 255, 255, 0.05) 100%);
-  --ag-bg-decor: radial-gradient(900px 520px at 18% -12%, rgba(51, 118, 205, 0.16) 0%, transparent 58%),
-    radial-gradient(680px 420px at 110% 12%, rgba(255, 255, 255, 0.045) 0%, transparent 55%),
-    linear-gradient(180deg, rgba(255, 255, 255, 0.03) 0%, transparent 34%);
-  --ag-gradient-card-border: linear-gradient(180deg, rgba(255, 255, 255, 0.1) 0%, rgba(255, 255, 255, 0.04) 100%);
+  --ag-bg-decor: radial-gradient(900px 520px at 12% -14%, rgba(52, 72, 140, 0.28) 0%, transparent 60%),
+    radial-gradient(640px 420px at 108% 108%, rgba(176, 59, 40, 0.07) 0%, transparent 60%);
 
-  /* Corner radii */
-  --radius-sm: 6px;
+  --radius-sm: 7px;
   --radius-md: 10px;
   --radius-lg: 14px;
-  --radius-xl: 18px;
-  --radius-2xl: 24px;
+  --radius-xl: 16px;
+  --radius-2xl: 22px;
+  --radius-pill: 999px;
 
-  /* Transition timings */
-  --transition-fast: 0.15s cubic-bezier(0.4, 0, 0.2, 1);
-  --transition-normal: 0.25s cubic-bezier(0.4, 0, 0.2, 1);
-  --transition-slow: 0.35s cubic-bezier(0.4, 0, 0.2, 1);
-  --transition-bounce: 0.5s cubic-bezier(0.34, 1.56, 0.64, 1);
-  --transition-spring: 0.6s cubic-bezier(0.16, 1, 0.3, 1);
+  --transition-fast: 0.16s cubic-bezier(0.16, 1, 0.3, 1);
+  --transition-normal: 0.24s cubic-bezier(0.16, 1, 0.3, 1);
+  --transition-slow: 0.35s cubic-bezier(0.16, 1, 0.3, 1);
 }
 
-/* Light theme overrides */
+/* Light theme */
 :root[data-theme="light"] {
   color-scheme: light;
-
-  /* Background and surfaces */
-  --ag-bg: rgb(245, 245, 247);
+  --ag-bg: rgb(244, 245, 249);
   --ag-surface: rgb(255, 255, 255);
-  --ag-surface-2: rgb(240, 240, 242);
-  --ag-surface-3: rgb(232, 232, 235);
+  --ag-surface-2: rgb(242, 244, 248);
+  --ag-surface-3: rgb(232, 236, 243);
   --ag-surface-elevated: rgb(255, 255, 255);
 
-  /* Border colors */
-  --ag-border: rgba(0, 0, 0, 0.08);
-  --ag-border-hover: rgba(0, 0, 0, 0.14);
-  --ag-border-active: rgba(51, 118, 205, 0.5);
-  --ag-border-glow: rgba(51, 118, 205, 0.2);
+  --ag-text: rgb(40, 46, 64);
+  --ag-text-strong: rgb(18, 29, 62);
+  --ag-text-secondary: rgb(72, 80, 102);
+  --ag-text-tertiary: rgb(112, 119, 138);
+  --ag-text-muted: rgb(150, 156, 172);
 
-  /* Text colors */
-  --ag-text: rgb(29, 29, 31);
-  --ag-text-strong: rgb(29, 29, 31);
-  --ag-text-secondary: rgb(60, 60, 67);
-  --ag-text-tertiary: rgb(110, 110, 115);
-  --ag-text-muted: rgb(142, 142, 147);
+  --ag-border: rgba(18, 29, 62, 0.08);
+  --ag-border-hover: rgba(18, 29, 62, 0.16);
+  --ag-border-active: rgba(18, 29, 62, 0.45);
+  --ag-border-glow: rgba(18, 29, 62, 0.2);
 
-  /* Accent colors */
-  --ag-accent: rgb(51, 118, 205);
-  --ag-accent-hover: rgb(41, 108, 195);
-  --ag-accent-active: rgb(31, 98, 185);
-  --ag-accent-subtle: rgba(51, 118, 205, 0.08);
-  --ag-accent-glow: rgba(51, 118, 205, 0.15);
-  --ag-accent-gradient: linear-gradient(135deg, rgb(51, 118, 205) 0%, rgb(71, 148, 235) 100%);
+  --ag-accent: rgb(38, 60, 128);
+  --ag-accent-hover: rgb(28, 46, 104);
+  --ag-accent-active: rgb(18, 29, 62);
+  --ag-accent-solid: rgb(18, 29, 62);
+  --ag-accent-solid-hover: rgb(32, 46, 88);
+  --ag-accent-subtle: rgba(38, 60, 128, 0.08);
+  --ag-accent-glow: rgba(38, 60, 128, 0.14);
+  --ag-accent-gradient: linear-gradient(180deg, rgb(34, 48, 92) 0%, rgb(18, 29, 62) 100%);
 
-  /* Status colors */
-  --ag-success: rgb(52, 199, 89);
-  --ag-success-subtle: rgba(52, 199, 89, 0.1);
-  --ag-warning: rgb(255, 149, 0);
-  --ag-warning-subtle: rgba(255, 149, 0, 0.1);
-  --ag-error: rgb(255, 59, 48);
-  --ag-error-subtle: rgba(255, 59, 48, 0.1);
+  --ag-bronze: rgb(118, 104, 68);
+  --ag-bronze-subtle: rgba(132, 118, 82, 0.13);
 
-  /* Scrollbar colors */
-  --ag-scrollbar-track: rgb(240, 240, 240);
-  --ag-scrollbar-thumb: rgb(193, 193, 193);
-  --ag-scrollbar-thumb-hover: rgb(161, 161, 161);
+  --ag-success: rgb(36, 138, 84);
+  --ag-success-subtle: rgba(36, 138, 84, 0.09);
+  --ag-warning: rgb(176, 112, 18);
+  --ag-warning-subtle: rgba(204, 138, 30, 0.12);
+  --ag-error: rgb(176, 59, 40);
+  --ag-error-solid: rgb(176, 59, 40);
+  --ag-error-subtle: rgba(176, 59, 40, 0.08);
+  --ag-error-border: rgba(176, 59, 40, 0.28);
 
-  /* Shadows */
-  --ag-shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.06);
-  --ag-shadow-md: 0 4px 12px rgba(0, 0, 0, 0.1);
-  --ag-shadow-lg: 0 8px 24px rgba(0, 0, 0, 0.14);
-  --ag-shadow-xl: 0 20px 40px rgba(0, 0, 0, 0.18), 0 8px 16px rgba(0, 0, 0, 0.1);
-  --ag-shadow-accent: 0 4px 20px rgba(51, 118, 205, 0.15);
-  --ag-shadow-accent-lg: 0 8px 32px rgba(51, 118, 205, 0.2);
-  --ag-shadow-card: 0 14px 36px rgba(0, 0, 0, 0.1), 0 2px 8px rgba(0, 0, 0, 0.06), 0 1px 0 rgba(255, 255, 255, 0.8) inset;
-  --ag-shadow-inset: inset 0 1px 2px rgba(0, 0, 0, 0.08);
+  --ag-user-bubble: rgb(236, 239, 246);
+  --ag-code-bg: rgba(18, 29, 62, 0.05);
+  --ag-hover: rgba(18, 29, 62, 0.04);
 
-  /* Gradient overlays */
-  --ag-gradient-surface: linear-gradient(180deg, rgba(255, 255, 255, 0.8) 0%, transparent 100%);
-  --ag-gradient-surface-hover: linear-gradient(180deg, rgba(255, 255, 255, 0.9) 0%, transparent 100%);
-  --ag-gradient-glow: radial-gradient(ellipse at 50% 0%, var(--ag-accent-glow) 0%, transparent 70%);
-  --ag-gradient-shine: linear-gradient(135deg, rgba(255, 255, 255, 0.6) 0%, transparent 50%, rgba(255, 255, 255, 0.3) 100%);
-  --ag-bg-decor: radial-gradient(900px 520px at 18% -12%, rgba(51, 118, 205, 0.1) 0%, transparent 58%),
-    radial-gradient(680px 420px at 110% 12%, rgba(0, 0, 0, 0.04) 0%, transparent 55%),
-    linear-gradient(180deg, rgba(0, 0, 0, 0.02) 0%, transparent 34%);
-  --ag-gradient-card-border: linear-gradient(180deg, rgba(255, 255, 255, 0.9) 0%, rgba(255, 255, 255, 0.5) 100%);
-
-  /* Frosted glass effects */
-  --ag-titlebar-bg: rgba(255, 255, 255, 0.88);
-  --ag-titlebar-border: rgba(0, 0, 0, 0.08);
+  --ag-titlebar-bg: rgba(255, 255, 255, 0.78);
+  --ag-titlebar-border: rgba(18, 29, 62, 0.07);
   --ag-glass: rgba(255, 255, 255, 0.8);
-  --ag-glass-border: rgba(0, 0, 0, 0.08);
-  --ag-ring: 0 0 0 3px var(--ag-accent-subtle);
+  --ag-glass-border: rgba(18, 29, 62, 0.08);
+
+  --ag-scrollbar-thumb: rgba(18, 29, 62, 0.16);
+  --ag-scrollbar-thumb-hover: rgba(18, 29, 62, 0.28);
+
+  --ag-shadow-sm: 0 1px 2px rgba(15, 23, 42, 0.06);
+  --ag-shadow-md: 0 6px 16px rgba(15, 23, 42, 0.08);
+  --ag-shadow-lg: 0 10px 28px rgba(15, 23, 42, 0.12);
+  --ag-shadow-xl: 0 20px 48px rgba(15, 23, 42, 0.14), 0 4px 14px rgba(15, 23, 42, 0.06);
+  --ag-shadow-card: 0 1px 3px rgba(15, 23, 42, 0.05), 0 6px 20px rgba(15, 23, 42, 0.04);
+  --ag-shadow-accent-lg: 0 6px 18px rgba(18, 29, 62, 0.22);
+
+  --ag-bg-decor: radial-gradient(900px 520px at 12% -14%, rgba(38, 60, 128, 0.08) 0%, transparent 60%),
+    radial-gradient(640px 420px at 108% 108%, rgba(176, 59, 40, 0.05) 0%, transparent 60%);
 }
 
-/*
- * Base styles
- */
 body {
-  margin: 0;
-  padding: 0;
   min-height: 100vh;
   background-color: var(--ag-bg);
   background-image: var(--ag-bg-decor);
@@ -273,141 +248,104 @@ textarea {
   -webkit-user-select: text;
 }
 
-/*
- * Scrollbars
- */
+/* Scrollbars */
 ::-webkit-scrollbar {
-  width: 6px;
-  height: 6px;
+  width: 8px;
+  height: 8px;
 }
 
-::-webkit-scrollbar-track {
+::-webkit-scrollbar-track,
+::-webkit-scrollbar-corner {
   background: transparent;
 }
 
 ::-webkit-scrollbar-thumb {
   background: var(--ag-scrollbar-thumb);
-  border-radius: 3px;
-  transition: background var(--transition-fast);
+  background-clip: padding-box;
+  border: 2px solid transparent;
+  border-radius: 8px;
 }
 
 ::-webkit-scrollbar-thumb:hover {
-  background: var(--ag-scrollbar-thumb-hover);
+  background-color: var(--ag-scrollbar-thumb-hover);
 }
 
-::-webkit-scrollbar-corner {
-  background: transparent;
-}
-
-/*
- * Focus states
- */
+/* Focus */
 :focus-visible {
   outline: 2px solid var(--ag-accent);
   outline-offset: 2px;
 }
 
-button:focus-visible,
-input:focus-visible {
-  outline: 2px solid var(--ag-accent);
-  outline-offset: 1px;
-}
-
-/*
- * Checkboxes
- */
+/* Checkboxes */
 input[type="checkbox"] {
-  width: 18px;
-  height: 18px;
-  accent-color: var(--ag-accent);
-  cursor: pointer;
-  border-radius: 5px;
-  transition: all var(--transition-fast);
-  appearance: none;
-  -webkit-appearance: none;
-  background-color: var(--ag-surface-2);
-  border: 1.5px solid var(--ag-border);
   position: relative;
   flex-shrink: 0;
+  width: 16px;
+  height: 16px;
+  appearance: none;
+  -webkit-appearance: none;
+  background-color: var(--ag-surface);
+  border: 1.5px solid var(--ag-border-hover);
+  border-radius: 5px;
+  cursor: pointer;
+  transition: background-color var(--transition-fast), border-color var(--transition-fast);
 }
 
 input[type="checkbox"]:hover:not(:disabled) {
   border-color: var(--ag-accent);
-  background-color: var(--ag-accent-subtle);
 }
 
 input[type="checkbox"]:checked {
-  background: var(--ag-accent-gradient);
-  border-color: var(--ag-accent);
-  box-shadow: 0 1px 4px rgba(51, 118, 205, 0.3);
+  background: var(--ag-accent-solid);
+  border-color: var(--ag-accent-solid);
 }
 
 input[type="checkbox"]:checked::after {
   content: '';
   position: absolute;
-  left: 5px;
-  top: 2px;
-  width: 5px;
-  height: 9px;
+  left: 4.5px;
+  top: 1.5px;
+  width: 4px;
+  height: 8px;
   border: solid white;
   border-width: 0 2px 2px 0;
   transform: rotate(45deg);
   animation: checkmark 0.15s ease-out;
 }
 
-input[type="checkbox"]:checked:hover:not(:disabled) {
-  background: var(--ag-accent-gradient);
-  filter: brightness(1.1);
-  border-color: var(--ag-accent-hover);
-}
-
 input[type="checkbox"]:disabled {
-  opacity: 0.35;
+  opacity: 0.4;
   cursor: not-allowed;
 }
 
-/*
- * Text selection
- */
 ::selection {
-  background-color: rgba(51, 118, 205, 0.35);
-  color: white;
+  background-color: var(--ag-accent-glow);
 }
 
-/*
- * Animation keyframes
- */
 @keyframes fadeIn {
-  from {
-    opacity: 0;
-    transform: translateY(6px);
-  }
-
-  to {
-    opacity: 1;
-    transform: translateY(0);
-  }
+  from { opacity: 0; transform: translateY(6px); }
+  to { opacity: 1; transform: translateY(0); }
 }
 
 @keyframes slideUp {
-  from {
-    opacity: 0;
-    transform: translateY(12px) scale(0.98);
-  }
-
-  to {
-    opacity: 1;
-    transform: translateY(0) scale(1);
-  }
+  from { opacity: 0; transform: translateY(12px) scale(0.98); }
+  to { opacity: 1; transform: translateY(0) scale(1); }
 }
 
 @keyframes checkmark {
-  from {
-    transform: rotate(45deg) scale(0);
-    opacity: 0;
-  }
-  to {
-    transform: rotate(45deg) scale(1);
-    opacity: 1;
+  from { transform: rotate(45deg) scale(0); opacity: 0; }
+  to { transform: rotate(45deg) scale(1); opacity: 1; }
+}
+
+@keyframes spin {
+  to { transform: rotate(360deg); }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  ::before,
+  ::after {
+    animation-duration: 0.01ms !important;
+    transition-duration: 0.01ms !important;
   }
 }

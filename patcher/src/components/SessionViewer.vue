@@ -1,44 +1,53 @@
 <template>
   <section class="sv-panel" aria-labelledby="sv-title">
-    <div class="sv-header">
+    <header class="sv-header">
       <h1 id="sv-title" class="sv-title">{{ $t('sessionViewer.title') }}</h1>
       <div class="sv-header-actions">
-        <select
-          v-model="filterProvider"
-          class="sv-filter-select"
-          :aria-label="$t('sessionViewer.filterLabel')"
-          :disabled="deletionPending"
-        >
-          <option value="">{{ $t('sessionViewer.filterAll') }}</option>
-          <option v-for="provider in providerIds" :key="provider" :value="provider">
-            {{ sourceLabel(provider) }}
-          </option>
-        </select>
-        <input
-          v-model="searchQuery"
-          type="search"
-          :placeholder="$t('sessionViewer.searchPlaceholder')"
-          :aria-label="$t('sessionViewer.searchLabel')"
-          :disabled="deletionPending"
-          class="sv-search-input"
-        />
-        <button class="sv-refresh-btn" :disabled="actionsBusy" @click="scanSessions">
-          {{ $t('sessionViewer.refresh') }}
+        <div class="sv-segmented" role="radiogroup" :aria-label="$t('sessionViewer.filterLabel')">
+          <label
+            v-for="option in providerOptions"
+            :key="option.value"
+            class="sv-seg"
+            :class="{ active: filterProvider === option.value, disabled: deletionPending }"
+            :title="option.title"
+          >
+            <input v-model="filterProvider" class="sv-sr-only" type="radio" :value="option.value" :disabled="deletionPending" />
+            <span>{{ option.label }}</span>
+            <span v-if="option.version" class="sv-seg-version">{{ option.version }}</span>
+          </label>
+        </div>
+        <div class="sv-search">
+          <svg viewBox="0 0 16 16" aria-hidden="true"><circle cx="7" cy="7" r="4.25" /><path d="m10.25 10.25 3 3" /></svg>
+          <input
+            v-model="searchQuery"
+            type="search"
+            :placeholder="$t('sessionViewer.searchPlaceholder')"
+            :aria-label="$t('sessionViewer.searchLabel')"
+            :disabled="deletionPending"
+          />
+        </div>
+        <label class="sv-chip" :title="$t('sessionViewer.hideIndexOnlyHint')">
+          <input v-model="hideIndexOnly" type="checkbox" :disabled="deletionPending" />
+          <span>{{ $t('sessionViewer.hideIndexOnly') }}</span>
+        </label>
+        <button class="sv-btn" :disabled="actionsBusy" @click="scanSessions">
+          <svg :class="{ spinning: isScanning }" viewBox="0 0 16 16" aria-hidden="true"><path d="M13.25 8A5.25 5.25 0 1 1 11.7 4.3" /><path d="M13.25 2.5v2.75H10.5" /></svg>
+          <span>{{ $t('sessionViewer.refresh') }}</span>
         </button>
       </div>
-    </div>
+    </header>
 
-    <div ref="optionsRow" class="sv-options">
-      <span>{{ $t('sessionViewer.cleanOptions') }}</span>
-      <label class="sv-select-all" :title="$t('sessionViewer.optionAppCacheHint')">
+    <div class="sv-options">
+      <span class="sv-options-label">{{ $t('sessionViewer.cleanOptions') }}</span>
+      <label class="sv-chip" :title="$t('sessionViewer.optionAppCacheHint')">
         <input v-model="cleanOptions.appCache" type="checkbox" :disabled="actionsBusy" />
         <span>{{ $t('sessionViewer.optionAppCache') }}</span>
       </label>
-      <label class="sv-select-all" :title="$t('sessionViewer.optionCcSwitchHint')">
+      <label class="sv-chip" :title="$t('sessionViewer.optionCcSwitchHint')">
         <input v-model="cleanOptions.ccSwitch" type="checkbox" :disabled="actionsBusy" />
         <span>{{ $t('sessionViewer.optionCcSwitch') }}</span>
       </label>
-      <label class="sv-select-all" :title="$t('sessionViewer.optionUsageMonitorHint')">
+      <label class="sv-chip" :title="$t('sessionViewer.optionUsageMonitorHint')">
         <input v-model="cleanOptions.usageMonitor" type="checkbox" :disabled="actionsBusy" />
         <span>{{ $t('sessionViewer.optionUsageMonitor') }}</span>
       </label>
@@ -65,10 +74,13 @@
     <div
       v-if="deleteResult"
       class="sv-feedback"
-      :class="{ 'sv-error': deleteResult.failures.length || deleteResult.warnings.length }"
+      :class="deleteResult.failures.length || deleteResult.warnings.length ? 'sv-error' : 'sv-success'"
     >
       <div role="status">
         {{ $t('sessionViewer.deleteResult', { deleted: deleteResult.deleted, failed: deleteResult.failures.length }) }}
+        <div v-if="deleteResult.orphanIndexesDeleted">
+          {{ $t('sessionViewer.orphanIndexesDeleted', { count: deleteResult.orphanIndexesDeleted }) }}
+        </div>
       </div>
       <ul v-if="deleteResult.failures.length">
         <li v-for="failure in deleteResult.failures" :key="failure.key" :title="failure.sourcePath">
@@ -84,15 +96,18 @@
     </div>
 
     <div class="sv-body">
-      <div class="sv-list-pane" :aria-busy="isScanning">
-        <div class="sv-list-meta" :style="{ minHeight: optionsHeight }">
+      <div class="sv-card sv-list-pane" :aria-busy="isScanning">
+        <div class="sv-list-meta">
           <span class="sv-count">{{ $t('sessionViewer.sessionCount', { count: filteredSessions.length }) }}</span>
           <label v-if="filteredSessions.length" class="sv-select-all">
             <input type="checkbox" :checked="isAllChecked" :disabled="actionsBusy" @change="toggleAllChecked" />
             <span>{{ $t('sessionViewer.selectAll') }}</span>
           </label>
         </div>
-        <div v-if="isScanning" class="sv-empty" role="status">{{ $t('sessionViewer.scanning') }}</div>
+        <div v-if="isScanning" class="sv-empty" role="status">
+          <span class="sv-spinner" aria-hidden="true"></span>
+          {{ $t('sessionViewer.scanning') }}
+        </div>
         <div v-else-if="!filteredSessions.length" class="sv-empty">
           <template v-if="!scanError || sessions.length">
             {{ $t(sessions.length ? 'sessionViewer.noMatches' : 'sessionViewer.noSessions') }}
@@ -120,52 +135,59 @@
               :disabled="deletionPending"
               @click="selectSession(session)"
             >
-              <span
-                :class="['sv-provider-badge', 'sv-provider-' + session.providerId]"
-                :title="$t('sessionViewer.providers.' + session.providerId)"
-              >
-                {{ $t('sessionViewer.providersShort.' + session.providerId) }}
-              </span>
-              <span class="sv-item-info">
-                <span class="sv-item-title" :title="sessionName(session)">{{ sessionName(session) }}</span>
-                <span v-if="session.lastActiveAt || session.indexOnly" class="sv-item-time">
-                  <template v-if="session.lastActiveAt">{{ formatRelativeTime(session.lastActiveAt) }}</template>
-                  <span v-if="session.indexOnly" class="sv-index-only">{{ $t('sessionViewer.indexOnly') }}</span>
+              <span class="sv-item-title" :title="sessionName(session)">{{ sessionName(session) }}</span>
+              <span class="sv-item-sub">
+                <span
+                  :class="['sv-provider-badge', 'sv-provider-' + session.providerId]"
+                  :title="$t('sessionViewer.providers.' + session.providerId)"
+                >
+                  {{ $t('sessionViewer.providersShort.' + session.providerId) }}
                 </span>
+                <span v-if="session.lastActiveAt">{{ formatRelativeTime(session.lastActiveAt) }}</span>
+                <span v-if="session.projectDir" class="sv-item-project">{{ pathBasename(session.projectDir) }}</span>
+                <span v-if="session.indexOnly" class="sv-index-only">{{ $t('sessionViewer.indexOnly') }}</span>
               </span>
             </button>
           </li>
         </ul>
-        <div v-if="checkedCount" class="sv-batch-bar">
-          <span class="sv-batch-count">{{ $t('sessionViewer.selectedCount', { count: checkedCount }) }}</span>
-          <button class="sv-batch-delete-btn" :disabled="actionsBusy" @click="batchDelete">
-            {{ $t(isDeleting ? 'sessionViewer.deleting' : 'sessionViewer.batchDelete') }}
-          </button>
-        </div>
+        <Transition name="sv-slide">
+          <div v-if="checkedCount" class="sv-batch-bar">
+            <span class="sv-batch-count">{{ $t('sessionViewer.selectedCount', { count: checkedCount }) }}</span>
+            <button class="sv-danger-btn solid" :disabled="actionsBusy" @click="batchDelete">
+              {{ $t(isDeleting ? 'sessionViewer.deleting' : 'sessionViewer.batchDelete') }}
+            </button>
+          </div>
+        </Transition>
       </div>
 
-      <div class="sv-msg-pane" :aria-busy="isLoadingMessages">
+      <div class="sv-card sv-msg-pane" :aria-busy="isLoadingMessages">
         <div v-if="!selectedSession" class="sv-empty-msg">
+          <svg class="sv-empty-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M4.5 6.5A2.5 2.5 0 0 1 7 4h10a2.5 2.5 0 0 1 2.5 2.5v7A2.5 2.5 0 0 1 17 16h-6l-4.5 3.5V16H7a2.5 2.5 0 0 1-2.5-2.5z" /><path d="M8.5 8.75h7M8.5 11.75h4.5" /></svg>
           {{ $t('sessionViewer.selectToView') }}
         </div>
         <template v-else>
           <div class="sv-msg-header">
             <div class="sv-msg-title-row">
-              <span :class="['sv-provider-badge', 'sv-provider-' + selectedSession.providerId]">
-                {{ $t('sessionViewer.providers.' + selectedSession.providerId) }}
-              </span>
               <h2 class="sv-msg-session-title">{{ sessionName(selectedSession) }}</h2>
-              <button class="sv-delete-btn" :disabled="actionsBusy" @click="deleteSelectedSession">
+              <button class="sv-danger-btn" :disabled="actionsBusy" @click="deleteSelectedSession">
+                <svg viewBox="0 0 16 16" aria-hidden="true"><path d="M2.75 4.25h10.5M6.25 4.25V2.75h3.5v1.5M4.25 4.25l.6 8.6c.06.8.72 1.4 1.5 1.4h3.3c.78 0 1.44-.6 1.5-1.4l.6-8.6" /></svg>
                 {{ $t(isDeleting ? 'sessionViewer.deleting' : 'sessionViewer.deleteSession') }}
               </button>
             </div>
             <div class="sv-msg-meta">
-              <span class="sv-meta-item sv-session-id">
-                {{ $t('sessionViewer.sessionId', { id: selectedSession.sessionId }) }}
+              <span :class="['sv-provider-badge', 'sv-provider-' + selectedSession.providerId]">
+                {{ $t('sessionViewer.providers.' + selectedSession.providerId) }}
               </span>
-              <span v-if="selectedSession.projectDir" class="sv-meta-item" :title="selectedSession.projectDir">
-                {{ $t('sessionViewer.projectDir') }}: {{ pathBasename(selectedSession.projectDir) }}
-              </span>
+              <button
+                v-if="selectedSession.projectDir"
+                class="sv-path-chip"
+                :title="selectedSession.projectDir"
+                @click="reveal(selectedSession.projectDir)"
+              >
+                <svg viewBox="0 0 16 16" aria-hidden="true"><path d="M1.75 4.25c0-.83.67-1.5 1.5-1.5h3l1.5 1.75h5c.83 0 1.5.67 1.5 1.5v5.75c0 .83-.67 1.5-1.5 1.5h-9.5c-.83 0-1.5-.67-1.5-1.5z" /></svg>
+                <span class="sv-sr-only">{{ $t('sessionViewer.projectDir') }}:</span>
+                {{ pathBasename(selectedSession.projectDir) }}
+              </button>
               <span v-if="selectedSession.lastActiveAt" class="sv-meta-item">
                 {{ new Date(selectedSession.lastActiveAt).toLocaleString() }}
               </span>
@@ -173,41 +195,37 @@
                 {{ $t('sessionViewer.messageCount', { count: messages.length }) }}
               </span>
             </div>
-          </div>
-          <div class="sv-source-path" :title="selectedSession.sourcePath">
-            {{ $t('sessionViewer.sourcePath', { path: selectedSession.sourcePath }) }}
+            <div class="sv-msg-ids">
+              <span class="sv-session-id">{{ $t('sessionViewer.sessionId', { id: selectedSession.sessionId }) }}</span>
+              <span class="sv-source-path" :title="selectedSession.sourcePath">
+                {{ $t('sessionViewer.sourcePath', { path: selectedSession.sourcePath }) }}
+              </span>
+              <button
+                class="sv-icon-btn"
+                :title="$t('sessionViewer.revealFile')"
+                :aria-label="$t('sessionViewer.revealFile')"
+                @click="reveal(selectedSession.sourcePath)"
+              >
+                <svg viewBox="0 0 16 16" aria-hidden="true"><path d="M9.5 2.75h3.75V6.5M13.25 2.75 8 8M11.75 9.5v2.75c0 .55-.45 1-1 1h-7c-.55 0-1-.45-1-1v-7c0-.55.45-1 1-1H6.5" /></svg>
+              </button>
+            </div>
           </div>
           <div v-if="isLoadingMessages" class="sv-empty-msg" role="status">
+            <span class="sv-spinner" aria-hidden="true"></span>
             {{ $t('sessionViewer.loadingMessages') }}
           </div>
-          <div v-else-if="messageError" class="sv-empty-msg sv-error" role="alert">
+          <div v-else-if="messageError" class="sv-empty-msg sv-error-text" role="alert">
             {{ $t('sessionViewer.loadFailed', { error: messageError }) }}
           </div>
           <div v-else-if="!messages.length" class="sv-empty-msg" role="status">
             {{ $t(selectedSession.indexOnly ? 'sessionViewer.indexOnlyHint' : 'sessionViewer.noMessages') }}
           </div>
-          <div v-else :key="sessionKey(selectedSession)" class="sv-messages">
-            <div
-              v-for="(msg, idx) in messages"
-              :key="idx"
-              :class="['sv-message', 'sv-role-' + msg.role]"
-            >
-              <div class="sv-message-head">
-                <span :class="['sv-role-label', 'sv-role-color-' + msg.role]">
-                  {{ $t('sessionViewer.roles.' + msg.role, msg.role) }}
-                </span>
-                <span v-if="msg.ts" class="sv-message-time">{{ new Date(msg.ts).toLocaleTimeString() }}</span>
-                <button
-                  class="sv-copy-btn"
-                  :title="$t(copiedIdx === idx ? 'sessionViewer.copied' : 'sessionViewer.copyMessage')"
-                  @click="copyText(msg.content, idx)"
-                >
-                  {{ copiedIdx === idx ? '✓' : '⎘' }}
-                </button>
-              </div>
-              <div class="sv-message-body">{{ msg.content }}</div>
-            </div>
-          </div>
+          <SessionMessages
+            v-else
+            :key="sessionKey(selectedSession)"
+            :messages="messages"
+            :provider-id="selectedSession.providerId"
+          />
         </template>
       </div>
     </div>
@@ -220,6 +238,7 @@ import { invoke } from '@tauri-apps/api/core';
 import type { SessionTarget } from '../navigation';
 import { ask } from '@tauri-apps/plugin-dialog';
 import { useI18n } from 'vue-i18n';
+import SessionMessages from './SessionMessages.vue';
 
 const { t } = useI18n();
 
@@ -248,6 +267,7 @@ interface SessionMessage {
 
 interface DeleteResult {
   deleted: number;
+  orphanIndexesDeleted: number;
   failures: { key: string; name: string; sourcePath: string; error: string }[];
   warnings: string[];
 }
@@ -259,6 +279,7 @@ interface CleanOptions {
 }
 
 const CLEAN_OPTIONS_KEY = 'anti-power-clean-options';
+const HIDE_INDEX_ONLY_KEY = 'anti-power-hide-index-only';
 
 function loadCleanOptions(): CleanOptions {
   const options: CleanOptions = { ccSwitch: false, usageMonitor: false, appCache: false };
@@ -288,12 +309,32 @@ async function refreshVersions() {
   const next = await invoke<Record<Provider, string | null>>('client_versions').catch(() => ({}));
   if (request === versionRequest) versions.value = next;
 }
+const providerOptions = computed(() => [
+  { value: '', label: t('sessionViewer.filterAll'), version: null, title: t('sessionViewer.filterAll') },
+  ...providerIds.map(provider => ({
+    value: provider,
+    label: t('sessionViewer.providersShort.' + provider),
+    version: versions.value[provider] ?? null,
+    title: sourceLabel(provider),
+  })),
+]);
+
+async function reveal(path: string) {
+  try {
+    const { revealItemInDir } = await import('@tauri-apps/plugin-opener');
+    await revealItemInDir(path);
+  } catch {
+    // The path may no longer exist
+  }
+}
+
 const sessions = ref<SessionMeta[]>([]);
 const messages = ref<SessionMessage[]>([]);
 const selectedSession = ref<SessionMeta | null>(null);
 const checkedSessions = ref(new Set<string>());
 const filterProvider = ref('');
 const searchQuery = ref('');
+const hideIndexOnly = ref(localStorage.getItem(HIDE_INDEX_ONLY_KEY) === 'true');
 const isScanning = ref(false);
 const isLoadingMessages = ref(false);
 const deletionPending = ref(false);
@@ -305,13 +346,14 @@ const usageMonitorCleanupPending = ref(false);
 const messageError = ref('');
 const confirmationError = ref('');
 const deleteResult = ref<DeleteResult | null>(null);
-const copiedIdx = ref<number | null>(null);
 const cleanOptions = ref(loadCleanOptions());
 watch(cleanOptions, options => {
   localStorage.setItem(CLEAN_OPTIONS_KEY, JSON.stringify(options));
 }, { deep: true });
+watch(hideIndexOnly, hide => {
+  localStorage.setItem(HIDE_INDEX_ONLY_KEY, String(hide));
+});
 let detailRequest = 0;
-let copyTimer: ReturnType<typeof setTimeout> | undefined;
 
 function sessionKey(session: SessionMeta): string {
   return JSON.stringify([session.providerId, session.sourcePath]);
@@ -330,8 +372,9 @@ const filteredSessions = computed(() => {
   const matchesId = query && sessions.value.some(session => session.sessionId.toLowerCase() === query);
   return sessions.value.filter(session => {
     if (filterProvider.value && session.providerId !== filterProvider.value) return false;
-    if (!query) return true;
     if (matchesId) return session.sessionId.toLowerCase() === query;
+    if (hideIndexOnly.value && session.indexOnly) return false;
+    if (!query) return true;
     return [session.title, session.summary, session.projectDir, session.sessionId]
       .some(value => value?.toLowerCase().includes(query));
   });
@@ -342,7 +385,7 @@ const isAllChecked = computed(() =>
   filteredSessions.value.every(session => checkedSessions.value.has(sessionKey(session))),
 );
 
-watch([filterProvider, searchQuery], () => {
+watch([filterProvider, searchQuery, hideIndexOnly], () => {
   checkedSessions.value.clear();
   if (selectedKey.value && !filteredSessions.value.some(session => sessionKey(session) === selectedKey.value)) {
     void selectSession(null);
@@ -357,22 +400,9 @@ function openSession(target: SessionTarget) {
 }
 
 defineExpose({ openSession });
-const optionsRow = ref<HTMLElement | null>(null);
-const optionsHeight = ref<string>();
-let rowObserver: ResizeObserver | undefined;
-onMounted(() => {
-  if (optionsRow.value) {
-    rowObserver = new ResizeObserver(([entry]) => {
-      optionsHeight.value = entry.target.getBoundingClientRect().height + 'px';
-    });
-    rowObserver.observe(optionsRow.value, { box: 'border-box' });
-  }
-  void scanSessions();
-});
+onMounted(() => void scanSessions());
 onUnmounted(() => {
-  rowObserver?.disconnect();
   detailRequest++;
-  clearTimeout(copyTimer);
 });
 
 function errorMessage(error: unknown): string {
@@ -401,7 +431,7 @@ async function scanSessions() {
     ccSwitchVerificationPending.value = result.ccSwitchVerificationPending;
     usageMonitorCleanupPending.value = result.usageMonitorCleanupPending;
 
-    const byKey = new Map(sessions.value.map(session => [sessionKey(session), session]));
+    const byKey = new Map(filteredSessions.value.map(session => [sessionKey(session), session]));
     for (const key of checkedSessions.value) {
       if (!byKey.has(key)) checkedSessions.value.delete(key);
     }
@@ -434,8 +464,6 @@ async function selectSession(session: SessionMeta | null) {
   selectedSession.value = session;
   messages.value = [];
   messageError.value = '';
-  copiedIdx.value = null;
-  clearTimeout(copyTimer);
   isLoadingMessages.value = session !== null;
   if (!session) return;
 
@@ -490,22 +518,6 @@ function pathBasename(p: string): string {
   return parts[parts.length - 1] || p;
 }
 
-async function copyText(text: string, index: number) {
-  const request = detailRequest;
-  try {
-    await navigator.clipboard.writeText(text);
-    if (request !== detailRequest) return;
-
-    copiedIdx.value = index;
-    clearTimeout(copyTimer);
-    copyTimer = setTimeout(() => {
-      copiedIdx.value = null;
-    }, 1500);
-  } catch {
-    // Ignore clipboard failures so the viewer stays usable
-  }
-}
-
 function toggleCheck(key: string) {
   if (checkedSessions.value.has(key)) {
     checkedSessions.value.delete(key);
@@ -523,8 +535,10 @@ function toggleAllChecked() {
 function deleteSelectedSession() {
   if (!selectedSession.value) return;
   const session = selectedSession.value;
+  const id = session.sessionId.toLowerCase();
   const hasOtherSources = sessions.value.some(other =>
-    other.sessionId === session.sessionId && other.sourcePath !== session.sourcePath,
+    other.sessionId.toLowerCase() === id &&
+    other.sourcePath !== session.sourcePath && !other.indexOnly,
   );
   const message = t('sessionViewer.deleteConfirmMessage', {
     name: sessionName(session),
@@ -547,8 +561,25 @@ async function deleteSessions(targets: SessionMeta[], message: string) {
   deletionPending.value = true;
   confirmationError.value = '';
   try {
+    const selectedKeys = new Set(targets.map(sessionKey));
+    const fullIds = new Set(targets.filter(session => !session.indexOnly)
+      .map(session => session.sessionId.toLowerCase()));
+    const matchingIndexes = sessions.value.filter(session =>
+      session.indexOnly && fullIds.has(session.sessionId.toLowerCase()) &&
+      !selectedKeys.has(sessionKey(session)),
+    );
     const options = { ...cleanOptions.value };
+    let orphanScanError = '';
+    const orphanIndexes = await invoke<Pick<SessionMeta, 'providerId' | 'sourcePath' | 'sessionId'>[]>(
+      'preview_orphan_indexes', { selectedIds: targets.map(session => session.sessionId) },
+    ).catch(error => {
+      orphanScanError = errorMessage(error);
+      return [];
+    });
     const extras = [
+      matchingIndexes.length > 0 && t('sessionViewer.confirmMatchingIndexes', { count: matchingIndexes.length }),
+      orphanIndexes.length > 0 && t('sessionViewer.confirmOrphanIndexes', { count: orphanIndexes.length }),
+      orphanScanError && t('sessionViewer.orphanScanFailed', { error: orphanScanError }),
       options.appCache && t('sessionViewer.confirmAppCache'),
       options.ccSwitch && t('sessionViewer.confirmCcSwitch'),
       options.usageMonitor && t('sessionViewer.confirmUsageMonitor'),
@@ -571,19 +602,27 @@ async function deleteSessions(targets: SessionMeta[], message: string) {
     deleteResult.value = null;
     const deleted = new Set<string>();
     const failures: DeleteResult['failures'] = [];
-    // The backend cleans each store in one pass and reports an error per session
+    // The backend reports an error per selected session and warnings for extra index cleanups
     let errors: (string | null)[];
     let warnings: string[] = [];
+    let orphanIndexesDeleted = 0;
     try {
       const result = await invoke<{
         errors: (string | null)[];
         warnings: string[];
+        orphanIndexesDeleted: number;
         usageMonitorCleanupPending: boolean;
       }>('delete_sessions', {
-        sessions: targets.map(({ providerId, sourcePath, sessionId }) => ({ providerId, sourcePath, sessionId })),
+        sessions: targets.map(({ providerId, sourcePath, sessionId, indexOnly }) => ({
+          providerId, sourcePath, sessionId, indexOnly,
+        })),
+        matchingIndexes: matchingIndexes.map(({ providerId, sourcePath, sessionId }) => ({
+          providerId, sourcePath, sessionId,
+        })),
+        orphanIndexes,
         options,
       });
-      ({ errors, warnings } = result);
+      ({ errors, warnings, orphanIndexesDeleted } = result);
       usageMonitorCleanupPending.value ||= result.usageMonitorCleanupPending;
     } catch (error) {
       errors = targets.map(() => errorMessage(error));
@@ -602,7 +641,7 @@ async function deleteSessions(targets: SessionMeta[], message: string) {
     for (const key of deleted) checkedSessions.value.delete(key);
     if (selectedKey.value && deleted.has(selectedKey.value)) void selectSession(null);
 
-    deleteResult.value = { deleted: deleted.size, failures, warnings };
+    deleteResult.value = { deleted: deleted.size, orphanIndexesDeleted, failures, warnings };
     await scanSessions();
   } finally {
     isDeleting.value = false;
@@ -615,133 +654,245 @@ async function deleteSessions(targets: SessionMeta[], message: string) {
 .sv-panel {
   display: flex;
   flex-direction: column;
+  gap: 10px;
   flex: 1;
   min-height: 0;
   min-width: 0;
-  overflow: hidden;
-  background: var(--ag-surface);
-  border: 1px solid var(--ag-border);
-  border-radius: var(--radius-xl);
-  box-shadow: var(--ag-shadow-xl);
 }
 
+.sv-sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+}
+
+.sv-panel svg {
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.4;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  flex-shrink: 0;
+}
+
+.sv-panel button:disabled,
+.sv-panel input:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+/* Toolbar */
 .sv-header {
   display: flex;
   justify-content: space-between;
   align-items: center;
-  padding: 12px 16px;
-  gap: 8px 12px;
   flex-wrap: wrap;
-  border-bottom: 1px solid var(--ag-border);
+  gap: 10px 16px;
   flex-shrink: 0;
 }
 
 .sv-title {
-  font-size: 15px;
-  font-weight: 600;
-  margin: 0;
+  font-size: 18px;
+  font-weight: 650;
+  letter-spacing: -0.01em;
   color: var(--ag-text-strong);
 }
 
 .sv-header-actions {
-  display: grid;
-  grid-template-columns: repeat(2, minmax(0, 174px)) max-content;
-  max-width: 100%;
-  align-items: center;
-  gap: 10px;
-}
-
-.sv-filter-select,
-.sv-search-input,
-.sv-refresh-btn {
-  height: 30px;
-  background-color: var(--ag-surface-2);
-  border: 1px solid var(--ag-border);
-  border-radius: var(--radius-sm);
-  color: var(--ag-text);
-  font-size: 12px;
-  line-height: 1;
-  padding: 0 10px;
-  outline: none;
-}
-
-.sv-filter-select,
-.sv-search-input {
-  width: 100%;
-  min-width: 0;
-}
-
-.sv-filter-select,
-.sv-refresh-btn {
-  cursor: pointer;
-}
-
-/* Drop the native control so the filter matches the button beside it */
-.sv-filter-select {
-  appearance: none;
-  -webkit-appearance: none;
-  padding-right: 28px;
-  background-image:
-    linear-gradient(45deg, transparent 50%, var(--ag-text-tertiary) 50%),
-    linear-gradient(135deg, var(--ag-text-tertiary) 50%, transparent 50%);
-  background-position: right 14px center, right 9px center;
-  background-size: 5px 5px;
-  background-repeat: no-repeat;
-}
-
-.sv-search-input:focus,
-.sv-filter-select:focus,
-.sv-filter-select:hover:not(:disabled),
-.sv-refresh-btn:hover:not(:disabled) {
-  border-color: var(--ag-accent);
-}
-
-.sv-refresh-btn:hover:not(:disabled) {
-  color: var(--ag-text-strong);
-}
-
-.sv-panel button:focus-visible,
-.sv-panel input[type="checkbox"]:focus-visible {
-  outline: 2px solid var(--ag-accent);
-  outline-offset: -2px;
-}
-
-.sv-panel button:disabled,
-.sv-panel input:disabled,
-.sv-panel select:disabled {
-  opacity: 0.6;
-  cursor: not-allowed;
-}
-
-.sv-options,
-.sv-list-meta {
   display: flex;
   align-items: center;
   flex-wrap: wrap;
-  gap: 4px 12px;
-  min-height: 31px;
-  padding: 6px 16px;
-  border-bottom: 1px solid var(--ag-border);
-  font-size: 11px;
+  gap: 8px;
+  min-width: 0;
+}
+
+.sv-segmented {
+  display: inline-flex;
+  padding: 3px;
+  gap: 2px;
+  border-radius: var(--radius-pill);
+  background: var(--ag-surface);
+  box-shadow: var(--ag-shadow-card), inset 0 0 0 1px var(--ag-border);
+}
+
+.sv-seg {
+  position: relative;
+  display: inline-flex;
+  align-items: baseline;
+  gap: 5px;
+  height: 26px;
+  padding: 0 12px;
+  border-radius: var(--radius-pill);
+  font-size: 12px;
+  line-height: 26px;
+  font-weight: 500;
   color: var(--ag-text-tertiary);
+  cursor: pointer;
+  white-space: nowrap;
+  transition: background var(--transition-fast), color var(--transition-fast);
+}
+
+.sv-seg:hover:not(.disabled) {
+  color: var(--ag-text-strong);
+}
+
+.sv-seg.active {
+  background: var(--ag-accent-solid);
+  color: #fff;
+}
+
+.sv-seg.disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.sv-seg:has(input:focus-visible) {
+  outline: 2px solid var(--ag-accent);
+  outline-offset: 1px;
+}
+
+.sv-seg-version {
+  font-size: 10.5px;
+  opacity: 0.62;
+}
+
+.sv-search {
+  position: relative;
+  display: flex;
+  align-items: center;
+  width: 190px;
+  min-width: 120px;
+  flex: 0 1 190px;
+}
+
+.sv-search svg {
+  position: absolute;
+  left: 11px;
+  width: 14px;
+  height: 14px;
+  color: var(--ag-text-muted);
+  pointer-events: none;
+}
+
+.sv-search input {
+  width: 100%;
+  height: 32px;
+  padding: 0 12px 0 32px;
+  border-radius: var(--radius-pill);
+  background: var(--ag-surface);
+  box-shadow: var(--ag-shadow-card), inset 0 0 0 1px var(--ag-border);
+  font-size: 12.5px;
+  outline: none;
+  transition: box-shadow var(--transition-fast);
+}
+
+.sv-search input::placeholder {
+  color: var(--ag-text-muted);
+}
+
+.sv-search input:focus {
+  box-shadow: inset 0 0 0 1px var(--ag-border-active), var(--ag-ring);
+}
+
+.sv-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  height: 32px;
+  padding: 0 14px;
+  border-radius: var(--radius-pill);
+  background: var(--ag-surface);
+  box-shadow: var(--ag-shadow-card), inset 0 0 0 1px var(--ag-border);
+  font-size: 12.5px;
+  font-weight: 500;
+  color: var(--ag-text-strong);
+  cursor: pointer;
+  transition: background var(--transition-fast);
+}
+
+.sv-btn svg {
+  width: 14px;
+  height: 14px;
+}
+
+.sv-btn:hover:not(:disabled) {
+  background: var(--ag-surface-2);
+}
+
+.spinning {
+  animation: spin 0.9s linear infinite;
+}
+
+/* Cleanup options */
+.sv-options {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 6px;
   flex-shrink: 0;
+  font-size: 12px;
+  color: var(--ag-text-tertiary);
 }
 
-.sv-list-meta {
-  justify-content: space-between;
-  padding-inline: 12px;
+.sv-options-label {
+  margin-right: 2px;
 }
 
+.sv-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  height: 26px;
+  padding: 0 10px 0 7px;
+  border-radius: var(--radius-pill);
+  background: var(--ag-hover);
+  color: var(--ag-text-secondary);
+  cursor: pointer;
+  transition: background var(--transition-fast), color var(--transition-fast);
+}
+
+.sv-chip:hover {
+  background: var(--ag-accent-subtle);
+}
+
+.sv-chip:has(input:checked) {
+  background: var(--ag-accent-subtle);
+  color: var(--ag-text-strong);
+}
+
+.sv-chip input {
+  width: 14px;
+  height: 14px;
+  border-radius: 4px;
+}
+
+.sv-chip input:checked::after {
+  left: 3.5px;
+  top: 0.5px;
+}
+
+.sv-header-actions .sv-chip {
+  height: 32px;
+  font-size: 12px;
+  white-space: nowrap;
+}
+
+/* Feedback banners */
 .sv-feedback {
   flex-shrink: 0;
   max-height: 20%;
   overflow: auto;
-  border-bottom: 1px solid var(--ag-border);
+  padding: 9px 14px 9px 16px;
+  border-radius: var(--radius-md);
   background: var(--ag-success-subtle);
+  box-shadow: inset 3px 0 0 var(--ag-success);
   color: var(--ag-text-strong);
-  font-size: 12px;
-  padding: 8px 16px;
+  font-size: 12.5px;
   overflow-wrap: anywhere;
+  animation: fadeIn 0.2s ease-out;
 }
 
 .sv-feedback ul {
@@ -751,374 +902,422 @@ async function deleteSessions(targets: SessionMeta[], message: string) {
 }
 
 .sv-notice {
-  background: var(--ag-surface-2);
+  background: var(--ag-bronze-subtle);
+  box-shadow: inset 3px 0 0 var(--ag-bronze);
   color: var(--ag-text-secondary);
 }
 
 .sv-error {
   background: var(--ag-error-subtle);
-  color: var(--ag-text-strong);
+  box-shadow: inset 3px 0 0 var(--ag-error);
 }
 
+/* Cards */
 .sv-body {
   display: flex;
+  gap: 12px;
   flex: 1;
   min-height: 0;
-  overflow: hidden;
 }
 
-.sv-list-pane {
-  width: 42%;
-  max-width: 320px;
-  min-width: 225px;
-  min-height: 0;
-  border-right: 1px solid var(--ag-border);
+.sv-card {
   display: flex;
   flex-direction: column;
+  min-height: 0;
+  min-width: 0;
+  overflow: hidden;
+  border-radius: var(--radius-xl);
+  background: var(--ag-surface);
+  box-shadow: var(--ag-shadow-card), inset 0 0 0 1px var(--ag-border);
+}
+
+/* Session list */
+.sv-list-pane {
+  width: 38%;
+  max-width: 330px;
+  min-width: 230px;
   flex-shrink: 0;
 }
 
-.sv-search-input::placeholder {
-  color: var(--ag-text-muted);
+.sv-list-meta {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 4px 12px;
+  flex-wrap: wrap;
+  min-height: 42px;
+  padding: 8px 14px 6px 16px;
+  flex-shrink: 0;
+}
+
+.sv-count {
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--ag-text-secondary);
 }
 
 .sv-select-all {
   display: flex;
   align-items: center;
-  gap: 4px;
-  font-size: 11px;
+  gap: 6px;
+  font-size: 11.5px;
   color: var(--ag-text-tertiary);
   cursor: pointer;
 }
 
-.sv-select-all input {
-  margin: 0;
-  accent-color: var(--ag-accent);
-}
-
-.sv-count {
-  font-size: 11px;
-  color: var(--ag-text-tertiary);
-}
-
 .sv-empty {
-  padding: 32px 16px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  padding: 36px 16px;
   text-align: center;
   color: var(--ag-text-muted);
   font-size: 13px;
 }
 
+.sv-spinner {
+  width: 14px;
+  height: 14px;
+  border-radius: 50%;
+  border: 2px solid var(--ag-border-hover);
+  border-top-color: var(--ag-accent);
+  animation: spin 0.8s linear infinite;
+}
+
 .sv-list {
   flex: 1;
   overflow-y: auto;
-  padding: 0;
-  margin: 0;
-  list-style: none;
+  padding: 0 8px 8px;
 }
 
 .sv-item {
   display: flex;
   align-items: center;
-  gap: 8px;
-  padding-left: 12px;
-  border-bottom: 1px solid var(--ag-border);
+  gap: 10px;
+  padding-left: 8px;
+  margin-bottom: 2px;
+  border-radius: var(--radius-md);
   transition: background var(--transition-fast);
+}
+
+.sv-item:hover {
+  background: var(--ag-hover);
+}
+
+.sv-item.checked {
+  background: var(--ag-accent-subtle);
+}
+
+.sv-item.active {
+  background: var(--ag-accent-subtle);
+  box-shadow: inset 0 0 0 1px var(--ag-border-active);
 }
 
 .sv-item-open {
   flex: 1;
   min-width: 0;
   display: flex;
-  align-items: center;
-  gap: 8px;
-  padding: 10px 12px 10px 0;
-  border: none;
-  background: transparent;
-  cursor: pointer;
+  flex-direction: column;
+  gap: 3px;
+  padding: 9px 10px 9px 0;
+  border-radius: var(--radius-md);
   text-align: left;
-  color: var(--ag-text);
+  cursor: pointer;
 }
 
-.sv-item-checkbox {
-  margin: 0;
-  accent-color: var(--ag-accent);
-  flex-shrink: 0;
-}
-
-.sv-item.checked {
-  background: rgba(51, 118, 205, 0.05);
-}
-
-.sv-item:hover {
-  background: var(--ag-surface-2);
-}
-
-.sv-item.active {
-  background: var(--ag-accent-subtle, rgba(51, 118, 205, 0.1));
-  box-shadow: inset 3px 0 0 var(--ag-accent);
-}
-
-.sv-item-info {
-  flex: 1;
-  min-width: 0;
+.sv-item-open:focus-visible {
+  outline-offset: -2px;
 }
 
 .sv-item-title {
-  display: block;
   font-size: 13px;
   font-weight: 500;
+  line-height: 1.45;
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
   color: var(--ag-text-strong);
 }
 
-.sv-item-time {
-  display: block;
+.sv-item-sub {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
   font-size: 11px;
   color: var(--ag-text-tertiary);
-  margin-top: 2px;
+  white-space: nowrap;
+}
+
+.sv-item-project {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.sv-item-project::before {
+  content: '·';
+  margin-right: 6px;
+  color: var(--ag-text-muted);
 }
 
 .sv-index-only {
-  white-space: nowrap;
-  margin-left: 6px;
-  padding: 1px 5px;
-  border-radius: var(--radius-sm);
+  padding: 0 6px;
+  border-radius: var(--radius-pill);
   background: var(--ag-warning-subtle);
   color: var(--ag-warning);
-}
-
-.sv-item-time:has(> .sv-index-only:first-child) .sv-index-only {
-  margin-left: 0;
+  font-weight: 500;
 }
 
 .sv-provider-badge {
+  padding: 0 6px;
+  border-radius: 5px;
   font-size: 10px;
-  font-weight: 700;
-  padding: 3px 6px;
-  border-radius: var(--radius-sm);
+  font-weight: 650;
+  line-height: 17px;
+  letter-spacing: 0.02em;
+  white-space: nowrap;
   flex-shrink: 0;
-}
-
-.sv-item .sv-provider-badge {
-  min-width: 34px;
-  text-align: center;
 }
 
 .sv-provider-antigravity { background: var(--ag-accent-subtle); color: var(--ag-accent); }
-.sv-provider-agy { background: rgba(139, 92, 246, 0.15); color: #8b5cf6; }
-
-.sv-msg-pane {
-  flex: 1;
-  display: flex;
-  flex-direction: column;
-  overflow: hidden;
-  min-width: 0;
-  min-height: 0;
-}
-
-.sv-empty-msg {
-  flex: 1;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  text-align: center;
-  padding: 12px 16px;
-  overflow-wrap: anywhere;
-  color: var(--ag-text-muted);
-  font-size: 14px;
-}
-
-.sv-empty-msg.sv-error {
-  color: var(--ag-text-strong);
-}
-
-.sv-msg-header {
-  padding: 12px 16px;
-  border-bottom: 1px solid var(--ag-border);
-  flex-shrink: 0;
-}
-
-.sv-msg-title-row {
-  display: flex;
-  align-items: center;
-  gap: 6px 10px;
-  flex-wrap: wrap;
-  margin-bottom: 6px;
-}
-
-.sv-msg-session-title {
-  flex: 1 1 100px;
-  min-width: 0;
-  margin: 0;
-  overflow-wrap: anywhere;
-  font-size: 14px;
-  font-weight: 600;
-  color: var(--ag-text-strong);
-}
-
-.sv-msg-meta {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 12px;
-}
-
-.sv-meta-item {
-  font-size: 11px;
-  color: var(--ag-text-tertiary);
-}
-
-.sv-session-id {
-  user-select: text;
-  overflow-wrap: anywhere;
-}
-
-.sv-source-path {
-  flex-shrink: 0;
-  min-width: 0;
-  padding: 6px 16px;
-  border-bottom: 1px solid var(--ag-border);
-  color: var(--ag-text-tertiary);
-  font-size: 11px;
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  user-select: text;
-}
-
-.sv-messages {
-  flex: 1;
-  overflow-y: auto;
-  padding: 12px 16px;
-  display: flex;
-  flex-direction: column;
-  gap: 10px;
-}
-
-.sv-message {
-  border-radius: var(--radius-md);
-  padding: 10px 14px;
-  border-left: 3px solid transparent;
-}
-
-.sv-role-user {
-  background: rgba(34, 197, 94, 0.06);
-  border-left-color: #22c55e;
-}
-
-.sv-role-assistant {
-  background: rgba(51, 118, 205, 0.06);
-  border-left-color: var(--ag-accent);
-}
-
-.sv-message-head {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  margin-bottom: 6px;
-}
-
-.sv-role-label {
-  font-size: 11px;
-  font-weight: 600;
-  text-transform: uppercase;
-  letter-spacing: 0.03em;
-}
-
-.sv-role-color-user { color: #22c55e; }
-.sv-role-color-assistant { color: var(--ag-accent); }
-
-.sv-message-time {
-  font-size: 10px;
-  color: var(--ag-text-muted);
-}
-
-.sv-copy-btn {
-  margin-left: auto;
-  background: none;
-  border: none;
-  color: var(--ag-text-muted);
-  cursor: pointer;
-  font-size: 14px;
-  padding: 2px 6px;
-  border-radius: var(--radius-sm);
-  opacity: 0;
-  transition: opacity var(--transition-fast);
-}
-
-.sv-message:hover .sv-copy-btn {
-  opacity: 1;
-}
-
-.sv-copy-btn:hover {
-  color: var(--ag-text);
-  background: rgba(255, 255, 255, 0.08);
-}
-
-.sv-message-body {
-  font-size: 13px;
-  line-height: 1.6;
-  color: var(--ag-text);
-  white-space: pre-wrap;
-  word-break: break-word;
-  max-height: 400px;
-  overflow-y: auto;
-}
+.sv-provider-agy { background: var(--ag-bronze-subtle); color: var(--ag-bronze); }
 
 .sv-batch-bar {
   display: flex;
   align-items: center;
   justify-content: space-between;
   flex-wrap: wrap;
-  gap: 4px 8px;
-  padding: 8px 12px;
-  border-top: 1px solid var(--ag-border);
+  gap: 6px 8px;
+  margin: 0 8px 8px;
+  padding: 8px 8px 8px 12px;
+  border-radius: var(--radius-md);
   background: var(--ag-surface-2);
   flex-shrink: 0;
 }
 
 .sv-batch-count {
   font-size: 12px;
-  font-weight: 500;
-  color: var(--ag-accent);
+  font-weight: 600;
+  color: var(--ag-text-strong);
 }
 
-.sv-delete-btn,
-.sv-batch-delete-btn {
-  background: var(--ag-error-subtle);
-  border: 1px solid rgba(239, 68, 68, 0.3);
-  border-radius: var(--radius-sm);
+.sv-slide-enter-active,
+.sv-slide-leave-active {
+  transition: opacity var(--transition-fast), transform var(--transition-fast);
+}
+
+.sv-slide-enter-from,
+.sv-slide-leave-to {
+  opacity: 0;
+  transform: translateY(6px);
+}
+
+/* Buttons */
+.sv-danger-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  height: 28px;
+  padding: 0 12px;
+  border-radius: var(--radius-pill);
+  box-shadow: inset 0 0 0 1px var(--ag-error-border);
   color: var(--ag-error);
   font-size: 12px;
   font-weight: 500;
-  padding: 4px 12px;
+  white-space: nowrap;
   cursor: pointer;
-  transition: all var(--transition-fast);
+  transition: background var(--transition-fast), color var(--transition-fast);
 }
 
-.sv-delete-btn:hover:not(:disabled),
-.sv-batch-delete-btn:hover:not(:disabled) {
-  background: rgba(239, 68, 68, 0.2);
-  border-color: rgba(239, 68, 68, 0.5);
+.sv-danger-btn svg {
+  width: 13px;
+  height: 13px;
+}
+
+.sv-danger-btn:hover:not(:disabled) {
+  background: var(--ag-error-subtle);
+}
+
+.sv-danger-btn.solid {
+  background: var(--ag-error-solid);
+  box-shadow: none;
+  color: #fff;
+}
+
+.sv-danger-btn.solid:hover:not(:disabled) {
+  background: var(--ag-error-solid);
+  filter: brightness(1.1);
+}
+
+.sv-icon-btn {
+  display: grid;
+  place-items: center;
+  width: 22px;
+  height: 22px;
+  border-radius: 6px;
+  color: var(--ag-text-muted);
+  cursor: pointer;
+  flex-shrink: 0;
+}
+
+.sv-icon-btn svg {
+  width: 13px;
+  height: 13px;
+}
+
+.sv-icon-btn:hover {
+  background: var(--ag-hover);
+  color: var(--ag-text-strong);
+}
+
+/* Session detail */
+.sv-msg-pane {
+  flex: 1;
+}
+
+.sv-empty-msg {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  padding: 16px 24px;
+  text-align: center;
+  overflow-wrap: anywhere;
+  color: var(--ag-text-muted);
+  font-size: 13px;
+}
+
+.sv-empty-icon {
+  width: 36px;
+  height: 36px;
+  stroke-width: 1.2 !important;
+  color: var(--ag-text-muted);
+  opacity: 0.7;
+}
+
+.sv-error-text {
+  color: var(--ag-error);
+}
+
+.sv-msg-header {
+  display: flex;
+  flex-direction: column;
+  gap: 7px;
+  padding: 14px 18px 12px 22px;
+  border-bottom: 1px solid var(--ag-border);
+  flex-shrink: 0;
+}
+
+.sv-msg-title-row {
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+}
+
+.sv-msg-session-title {
+  flex: 1;
+  min-width: 0;
+  padding-top: 2px;
+  overflow-wrap: anywhere;
+  font-size: 15px;
+  font-weight: 650;
+  line-height: 1.4;
+  color: var(--ag-text-strong);
+}
+
+.sv-msg-meta {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 6px 12px;
+}
+
+.sv-meta-item {
+  font-size: 12px;
+  color: var(--ag-text-tertiary);
+}
+
+.sv-path-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  max-width: 220px;
+  height: 20px;
+  padding: 0 7px;
+  border-radius: 6px;
+  background: var(--ag-code-bg);
+  box-shadow: inset 0 0 0 1px var(--ag-border);
+  font-family: var(--ag-font-mono);
+  font-size: 11.5px;
+  color: var(--ag-text-secondary);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  cursor: pointer;
+}
+
+.sv-path-chip svg {
+  width: 12px;
+  height: 12px;
+  color: var(--ag-text-muted);
+}
+
+.sv-path-chip:hover {
+  background: var(--ag-accent-subtle);
+  color: var(--ag-text-strong);
+}
+
+.sv-msg-ids {
+  display: flex;
+  align-items: center;
+  gap: 4px 12px;
+  min-width: 0;
+  font-family: var(--ag-font-mono);
+  font-size: 10.5px;
+  color: var(--ag-text-muted);
+}
+
+.sv-session-id {
+  user-select: text;
+  white-space: nowrap;
+  flex-shrink: 0;
+}
+
+.sv-source-path {
+  flex: 1;
+  min-width: 0;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  user-select: text;
+}
+
+@media (max-width: 760px) {
+  .sv-msg-ids { flex-wrap: wrap; }
+  .sv-session-id { white-space: normal; overflow-wrap: anywhere; flex-shrink: 1; }
 }
 
 @media (max-width: 620px) {
+  .sv-header-actions { width: 100%; }
+  .sv-search { flex: 1 1 120px; }
+
   .sv-body {
     flex-direction: column;
     overflow-y: auto;
   }
 
   .sv-list-pane {
-    flex: 1 0 180px;
+    flex: 1 0 200px;
     width: 100%;
     max-width: none;
-    border-right: none;
-    border-bottom: 1px solid var(--ag-border);
   }
 
   .sv-msg-pane {
-    flex: 1 0 170px;
+    flex: 1 0 260px;
   }
 }
 </style>

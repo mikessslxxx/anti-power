@@ -5,7 +5,7 @@
 <h1 align="center">Anti-Power</h1>
 
 <p align="center">
-  <a href="https://github.com/mikessslxxx/anti-power/releases"><img src="https://img.shields.io/badge/Version-v5.3.0-blue.svg" alt="Version"></a>
+  <a href="https://github.com/mikessslxxx/anti-power/releases"><img src="https://img.shields.io/badge/Version-v5.4.0-blue.svg" alt="Version"></a>
   <img src="https://img.shields.io/badge/Antigravity_App-2.34.0-green.svg" alt="Antigravity App">
   <img src="https://img.shields.io/badge/Antigravity_CLI-1.5.14-green.svg" alt="Antigravity CLI">
 </p>
@@ -21,13 +21,13 @@
 - Lists sessions from the Antigravity App (`~/.gemini/antigravity`) and Antigravity CLI (`~/.gemini/antigravity-cli`), plus CC Switch profiles under `~/.cc-switch/agy/<profile>/antigravity-cli`
 - Searches by title, project, or session ID, filters by source (with detected client versions), and views messages
 - Deletes single or multiple sessions and reports the outcome for each
-- Flags index-only leftovers (records left behind after another tool removes the session files) so they can be removed as well
+- Flags index-only leftovers (records left behind after another tool removes the session files), with an option to hide or delete them
 
 Verified on macOS with Antigravity App 2.34.0 and Antigravity CLI 1.5.14. The Windows and Linux builds are untested. Antigravity IDE (`~/.gemini/antigravity-ide`) is not supported.
 
 ## What gets cleaned
 
-Each deletion is scoped to a single source and session ID. After cleanup, tools such as CC Switch no longer list the session:
+Cleanup removes the following data by source and session ID:
 
 | Location | Content |
 |----------|---------|
@@ -44,7 +44,9 @@ Each deletion is scoped to a single source and session ID. After cleanup, tools 
 | `ledger.json` under `sidecar_data/anti-power-usage/` | Legacy Anti-Power Usage totals for the session, folded into "Deleted sessions" |
 
 - Subagent conversations are removed with their parent. Sessions created by `/fork` are kept.
-- The same ID can exist in both the Antigravity App and Antigravity CLI. Each is listed separately; select both to remove it from both.
+- Deleting a complete session also clears matching index-only records in other sources; when several sources have complete copies, select each copy to delete.
+- Scans known local stores before deletion for leftover indexes with no session files, attachments, or migration archive, showing the count in the confirmation and clearing them once deletion succeeds (skipped if the check cannot finish).
+- Refuses to delete source leftovers after a full Usage Monitor migration in a standard data directory so migrated sessions keep their attachments (custom `--data-dir` paths are not checked; confirm attachments are unused before deleting).
 - The Antigravity App data folder is `~/Library/Application Support/Antigravity` on macOS, `%APPDATA%\Antigravity` on Windows, and `~/.config/Antigravity` on Linux.
 - Runtime logs (`log/`) and files written to `/tmp` or project folders are left untouched.
 - Compacts `conversation_summaries.db` after cleanup to clear deleted-row fragments (deferred if another tool is reading it). Deleted files are not wiped at the disk level.

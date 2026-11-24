@@ -3,7 +3,7 @@
   "description": "Local session manager for the Antigravity App and Antigravity CLI",
   "private": true,
   "license": "GPL-3.0-only",
-  "version": "5.3.0",
+  "version": "5.4.0",
   "type": "module",
   "scripts": {
     "dev": "vite",
@@ -17,6 +17,8 @@
     "@tauri-apps/api": "^2.12.5",
     "@tauri-apps/plugin-dialog": "^2.8.4",
     "@tauri-apps/plugin-opener": "^2.7.3",
+    "dompurify": "^3.5.0",
+    "marked": "^18.3.0",
     "vue": "^3.5.45",
     "vue-i18n": "^11.4.22"
   },

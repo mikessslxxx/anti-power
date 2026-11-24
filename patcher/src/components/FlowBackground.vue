@@ -31,13 +31,13 @@ onMounted(() => {
   handleResize();
   window.addEventListener('resize', handleResize);
 
-  const particles = Array.from({ length: 150 }, () => ({
+  const particles = Array.from({ length: 90 }, () => ({
     x: Math.random() * width,
     y: Math.random() * height,
     vx: (Math.random() - 0.5) * 0.3,
     vy: (Math.random() - 0.5) * 0.3,
     size: Math.random() * 1.5 + 0.5,
-    alpha: Math.random() * 0.4 + 0.1,
+    alpha: Math.random() * 0.3 + 0.06,
   }));
 
   /**
@@ -45,17 +45,18 @@ onMounted(() => {
    */
   const drawWaves = () => {
     const isDark = document.documentElement.getAttribute('data-theme') !== 'light';
-    const mainWaveColor = isDark ? '51, 118, 205' : '51, 118, 205';
-    const subWaveColor = isDark ? '204, 204, 204' : '60, 60, 67';
+    // Navy main wave, bronze and rust accents
+    const colors = isDark
+      ? ['140, 162, 228', '192, 176, 134', '160, 175, 215', '214, 110, 88']
+      : ['18, 29, 62', '132, 118, 82', '18, 29, 62', '176, 59, 40'];
+    const alphas = isDark ? [0.2, 0.1, 0.06, 0.06] : [0.14, 0.12, 0.05, 0.06];
 
     const lines = 4;
     for (let i = 0; i < lines; i++) {
       ctx.beginPath();
 
-      const isMain = i === 0;
-      ctx.lineWidth = isMain ? 2 : 1;
-      const alpha = isMain ? 0.25 : 0.08;
-      ctx.strokeStyle = `rgba(${isMain ? mainWaveColor : subWaveColor}, ${alpha})`;
+      ctx.lineWidth = i === 0 ? 1.6 : 1;
+      ctx.strokeStyle = `rgba(${colors[i]}, ${alphas[i]})`;
 
       for (let x = 0; x <= width; x += 10) {
         const yOffset = height / 2;
@@ -83,7 +84,7 @@ onMounted(() => {
    */
   const drawParticles = () => {
     const isDark = document.documentElement.getAttribute('data-theme') !== 'light';
-    const dotColor = isDark ? '255, 255, 255' : '0, 0, 0';
+    const dotColor = isDark ? '200, 210, 240' : '18, 29, 62';
 
     particles.forEach((particle) => {
       particle.x += particle.vx;
@@ -111,13 +112,18 @@ onMounted(() => {
     drawWaves();
     drawParticles();
 
-    animationId = requestAnimationFrame(render);
+    if (!reducedMotion) animationId = requestAnimationFrame(render);
   };
+
+  const reducedMotion = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+  // Resizing clears the canvas, so redraw the static frame
+  if (reducedMotion) window.addEventListener('resize', render);
 
   render();
 
   onBeforeUnmount(() => {
     window.removeEventListener('resize', handleResize);
+    window.removeEventListener('resize', render);
     cancelAnimationFrame(animationId);
   });
 });

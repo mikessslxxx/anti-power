@@ -1,28 +1,40 @@
-# Release Notes / 发布说明 (v5.3.0)
+# Release Notes / 发布说明 (v5.4.0)
 
-## 用量插件
+## 界面
 
-- 标题栏弹窗改为从 GitHub 下载安装或卸载上游 [Usage Monitor](https://github.com/yuhuan-dev/antigravity-usage-monitor) 最新正式版; 在 Antigravity 的 **Customizations → Installed** 中启用后可查看缓存命中率及账号的 5 小时和每周额度
-- 安装时为官方插件添加两个 Anti-Power 按钮: 面板顶栏打开当前本地会话, 设置页打开 **Usage Monitor** 弹窗; 插件通过内置 ZIP 更新时会重新应用按钮补丁
-- 卸载保留 Antigravity 数据目录中的设置和用量历史; 若安装目录含 Git 仓库或插件本地数据, 会备份整个目录并显示保存位置
-- 从 v5.1–5.2 切换时, 可先用旧版卸载 Anti-Power Usage 以还原 CLI 状态栏; 原账本保留在本机, Usage Monitor 不会导入
+- 顶部工具栏加双栏卡片布局, 深浅主题配色改为深蓝, 砖红, 铜棕
+- 会话来源改为分段切换并显示本机 App 和 CLI 版本; 会话列表在标题下方显示来源, 时间和项目; 支持隐藏仅索引会话 (按完整 ID 搜索时仍显示)
+- 会话详情支持在文件管理器中显示项目目录和会话文件
+
+## 会话内容
+
+- 助手回复按 Markdown 渲染 (标题, 列表, 任务列表, 表格, 代码块); 原始 HTML 显示为文本, 不加载远程图片
+- 本地文件链接显示为标签, 点击可在文件管理器中定位; 网页链接用系统浏览器打开
+- 用户消息改为右侧气泡, 连续回复合并显示; 长消息默认折叠, 离开底部时可跳到最新消息
 
 ## 会话清理
 
-- 新增默认关闭的 **Usage Monitor 会话记录** 选项: 清除已无本地副本会话的缓存标题与提问并保留用量和费用; 已安装的插件具备匹配的独立用量记录时移除原对话条目
+- 删除完整会话后一并清理其他来源中同 ID 的仅索引记录, 并在确认后清理各本地来源均无会话文件, 附件和迁移归档的历史残留索引
+- Usage Monitor 完整迁移会话后拒绝删除源端残留, 以保留迁入会话可能引用的附件; 迁移失败的归档不影响删除, 自定义 `--data-dir` 不在检查范围内
 
 ---
 
-## Usage Monitor
+## Interface
 
-- Install or uninstall the latest official [Usage Monitor](https://github.com/yuhuan-dev/antigravity-usage-monitor) release from GitHub via the title bar dialog; enable it under **Customizations → Installed** in Antigravity to view cache hit rates and 5-hour/weekly quotas
-- Add two Anti-Power buttons to the official plugin on install: the panel header opens the current local session, and Settings opens the **Usage Monitor** dialog; the built-in ZIP updater reapplies them
-- Keep settings and usage history in Antigravity's data directory on uninstall; back up the plugin folder and report its path when it contains a Git checkout or local plugin data
-- When switching from v5.1–5.2, uninstall Anti-Power Usage with the older Anti-Power first to restore its CLI status line; the existing ledger stays on disk and is not imported
+- Redesign the window with a toolbar above two cards and a navy, rust, and bronze palette across dark and light themes
+- Switch session sources with a segmented control showing installed App and CLI versions, and list each session's source, time, and project under its title; add a toggle to hide index-only sessions (full-ID search still shows matches)
+- Reveal the project directory and session file in the file manager from session details
+
+## Conversation view
+
+- Render assistant replies as Markdown (headings, lists, task lists, tables, code blocks); show raw HTML as text and never load remote images
+- Render local file links as chips that reveal in the file manager, and open web links in the system browser
+- Show user messages as right-aligned bubbles and group consecutive replies; collapse long messages by default and offer a jump to the latest message when scrolled away
 
 ## Session cleanup
 
-- Add an optional **Usage Monitor session history** cleanup that clears cached titles and prompts for sessions with no local copy left while preserving token counts and costs, removing the entry when the installed plugin has a matching independent usage record
+- Clear matching index-only records in other sources after deleting a complete session, and clear confirmed leftover indexes that have no session files, attachments, or migration archive in any local source
+- Refuse to delete source leftovers after a full Usage Monitor migration so migrated sessions keep their attachments; archives from failed moves do not block deletion, and custom `--data-dir` paths are not checked
 
 ---
 

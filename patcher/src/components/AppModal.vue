@@ -23,7 +23,7 @@ const titleId = useId();
 .modal-overlay {
   position: fixed;
   inset: 0;
-  background: rgba(0, 0, 0, 0.7);
+  background: rgba(8, 12, 24, 0.55);
   backdrop-filter: blur(8px) saturate(150%);
   -webkit-backdrop-filter: blur(8px) saturate(150%);
   display: flex;
@@ -36,7 +36,7 @@ const titleId = useId();
 .modal {
   background: var(--ag-surface);
   border: 1px solid var(--ag-border);
-  border-radius: var(--radius-xl);
+  border-radius: var(--radius-2xl);
   display: flex;
   flex-direction: column;
   width: min(360px, calc(100% - 24px));
@@ -54,7 +54,7 @@ const titleId = useId();
   left: 0;
   right: 0;
   height: 1px;
-  background: linear-gradient(90deg, transparent, rgba(255, 255, 255, 0.1), transparent);
+  background: linear-gradient(90deg, transparent, var(--ag-border-hover), transparent);
   pointer-events: none;
 }
 
@@ -93,7 +93,7 @@ const titleId = useId();
 
 .close-btn:hover {
   color: var(--ag-text);
-  background: rgba(255, 255, 255, 0.08);
+  background: var(--ag-hover);
 }
 
 .modal-body {

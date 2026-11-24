@@ -13,15 +13,17 @@ Anti-Power 可安装或卸载上游 Usage Monitor 正式版.
 - `patcher/src-tauri/src/commands/`: Rust 后端
   - `antigravity_store.rs`: 存储根目录, ID 校验, 不跟随符号链接的路径解析
   - `antigravity_scan.rs`: 会话列表和消息读取
-  - `antigravity_clean.rs`: 会话清理
-  - `cleanup_extras.rs`: Antigravity App 窗口状态和缓存, CC Switch 同步记录, 用量账本清理
-  - `usage_monitor.rs`: 可选清理 Usage Monitor 中已删除的本地会话明细
+  - `antigravity_clean.rs`: 会话删除, 存储事务和恢复
+  - `index_only.rs`: 同 ID 与历史残留索引的筛选和复核
+  - `cc_switch.rs`: CC Switch 同步记录清理
+  - `usage_monitor.rs`: Usage Monitor 迁移附件保护与会话缓存清理
+  - `cleanup_extras.rs`: Antigravity App 窗口状态, 浏览器缓存和用量账本清理
   - `usage_ledger.rs`: 将已删除会话折入 Anti-Power Usage 的匿名合计
   - `client_versions.rs`: 读取本机 App 和 CLI 版本, 供会话来源选择器显示
   - `plugin_install.rs`: 下载, 安装和卸载 Usage Monitor
   - `plugin_links.rs`: 为 Usage Monitor 注入 Anti-Power 跳转按钮
-  - `sessions.rs`: 会话相关的 Tauri 命令 (`scan_sessions`, `load_session_messages`, `delete_sessions`)
-- `patcher/src/`: Vue 前端, 主界面是 `components/SessionViewer.vue`
+  - `sessions.rs`: 会话相关的 Tauri 命令 (`scan_sessions`, `load_session_messages`, `preview_orphan_indexes`, `delete_sessions`)
+- `patcher/src/`: Vue 前端, 主界面是 `components/SessionViewer.vue`, 会话内容由 `components/SessionMessages.vue` 渲染 (Markdown 见 `markdown.ts`)
 - `patcher/src/locales/`: `zh-CN` 和 `en-US` 文案
 - `.github/workflows/release.yml`: Windows, macOS, Linux 安装包构建
 
@@ -39,9 +41,11 @@ Anti-Power 可安装或卸载上游 Usage Monitor 正式版.
 ## 清理规则
 
 - Antigravity App, Antigravity CLI 或 Antigravity IDE 运行时拒绝清理. CC Switch 和 Usage Monitor 可保持运行 (Usage Monitor 运行时暂留待清理记录, 退出后下次扫描再清理缓存).
+- 在 Usage Monitor 标准数据目录中发现迁移归档且源 `.db` 已移除时拒绝清理, 提交前出现新归档则回滚, 以保留源端附件.
 - 不跟随存储目录内的符号链接.
 - 先把待删文件移入 `.anti-power-clean-*`, 并在索引事务中记录提交. 清理中断后, 还原尚未提交的文件, 完成已提交的清理. 扫描时恢复失败只给出警告, 仍然列出会话.
-- 批量清理时每个存储目录只处理一遍: 一次事务, 一次全文索引重建, 一次 `VACUUM`. 整批失败时逐条重试, 但属于整个存储目录的错误不再重试.
+- 每轮按存储目录单遍清理 (一次事务, 一次全文索引重建, 一次 `VACUUM`); 整批失败时逐条重试, 存储级错误除外.
+- 所选会话删除成功后, 清理其他来源的同 ID 仅索引记录及确认框列出的历史残留索引 (提交前跨已知本地来源复核会话文件和迁移归档).
 - 摘要索引格式无法识别时直接失败, 不做任何修改.
 - 存储目录外的数据在存储提交后通过持久化收据 (`.anti-power-extras-*`, `.anti-power-sync-pending`) 清理, 未完成项在后续扫描时重试, 失败作为警告返回.
 - 子代理会话 (`nesting_depth > 0`) 随所属会话删除, fork 保留.
@@ -64,6 +68,6 @@ cd src-tauri && cargo test && cargo clippy --all-targets
 
 - 代码和文档保持精简.
 - 代码注释用英文, 注释符号后一个空格, 末尾不加句号.
-- 中英文文档统一使用英文标点.
-- 已发布的发布说明和更新日志条目保持原样.
+- 成对的中英文文档 (`AGENTS*`, `README*`, `CHANGELOG*`) 内容保持同步, 统一使用英文标点.
+- `release-notes.md` 复用 `CHANGELOG.md` 和 `CHANGELOG_EN.md` 的当期条目 (正文逐字一致); 已发布版本的条目保持原样.
 - `patcher/package.json`, `patcher/src-tauri/tauri.conf.json` 和 `patcher/src-tauri/Cargo.toml` 共用一个版本号.

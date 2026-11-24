@@ -6,7 +6,7 @@ mod commands;
 
 use commands::{
     client_versions, delete_sessions, install_plugin, launch_antigravity, load_session_messages,
-    plugin_status, scan_sessions, uninstall_plugin,
+    plugin_status, preview_orphan_indexes, scan_sessions, uninstall_plugin,
 };
 use tauri::Manager;
 use tauri_plugin_deep_link::DeepLinkExt;
@@ -55,6 +55,7 @@ pub fn run() {
             client_versions,
             scan_sessions,
             load_session_messages,
+            preview_orphan_indexes,
             delete_sessions,
             plugin_status,
             install_plugin,

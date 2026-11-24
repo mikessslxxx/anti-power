@@ -1,4 +1,4 @@
-//! Remove display text from deleted local sessions without removing their accounting data
+//! Protect migrated session attachments and clean Usage Monitor session cache
 
 use super::antigravity_clean::{store_read_lock, with_store_lock};
 use super::antigravity_scan::live_ids;
@@ -15,6 +15,10 @@ type Result<T> = std::result::Result<T, Box<dyn std::error::Error>>;
 const PLUGIN: &str = ".gemini/config/plugins/usage-monitor";
 const CACHE: &str = "trajectory_usage_cache.json";
 const DELETED: &str = "已删除会话 / Deleted session";
+const PANEL_DATA_DIRS: [&str; 2] = [
+    "sidecar_data/usage-monitor/panel/data",
+    "sidecar_data/usage-monitor/data",
+];
 
 const USAGE_FIELDS: [&str; 14] = [
     "accountName",
@@ -32,6 +36,105 @@ const USAGE_FIELDS: [&str; 14] = [
     "thinkingTokens",
     "responseTokens",
 ];
+
+pub(super) enum CacheCleanup {
+    Complete,
+    Pending,
+}
+
+pub(super) fn clean(
+    home: &Path,
+    cleaned: &Cleaned,
+    writer_running: fn() -> Result<bool>,
+) -> Result<CacheCleanup> {
+    // A writer may still hold records it has never flushed to disk
+    if writer_running()? {
+        return Ok(CacheCleanup::Pending);
+    }
+    let mut roots = strict_roots(home, DESKTOP)?;
+    roots.extend(strict_roots(home, CLI)?);
+    let mut caches = BTreeSet::new();
+    for root in &roots {
+        for data in PANEL_DATA_DIRS {
+            let relative = root.strip_prefix(home)?.join(data).join(CACHE);
+            if let Some(file) = checked_path(home, &relative)? {
+                caches.insert(file);
+            }
+        }
+    }
+    if let Some(file) = checked_file(home, &format!("{PLUGIN}/sidecars/panel/.data/{CACHE}"))? {
+        caches.insert(file);
+    }
+    if caches.is_empty() {
+        return Ok(CacheCleanup::Complete);
+    }
+
+    let compatible = reads_history(home);
+    let mut sources = Sources {
+        external_complete: compatible,
+        ..Sources::default()
+    };
+    let mut locks = Vec::new();
+    // IDE files can keep a copy alive even though Anti-Power only deletes App and CLI sessions
+    for root in roots
+        .into_iter()
+        .chain([".gemini/antigravity-ide", ".gemini/antigravity-idea"].map(|p| home.join(p)))
+    {
+        if checked_path(home, root.strip_prefix(home)?)?.is_none() {
+            continue;
+        }
+        let is_app = root == home.join(".gemini/antigravity");
+        let is_cli = root.ends_with("antigravity-cli");
+        if (is_app || is_cli) && root != cleaned.root {
+            locks.push(store_read_lock(&root)?);
+        }
+        sources.live.extend(live_ids(
+            home,
+            &root,
+            if is_app { DESKTOP } else { CLI },
+            None,
+        )?);
+        if sources.external_complete && sources.read_external(&root).is_err() {
+            sources.external_complete = false;
+        }
+        if is_app || is_cli {
+            for name in ["brain", "conversations"] {
+                if let Some(dir) = checked_path(&root, Path::new(name))? {
+                    sources.dirs.insert(dir);
+                    sources.app |= is_app;
+                    sources.cli |= is_cli;
+                }
+            }
+        }
+    }
+
+    let selected = cleaned
+        .ids
+        .iter()
+        .map(|id| id.to_ascii_lowercase())
+        .collect();
+    for file in caches {
+        let result = with_store_lock(file.parent().ok_or("Invalid cache path")?, |dir| {
+            let path = checked_file(dir, CACHE)?.ok_or("Usage Monitor cache moved")?;
+            let bytes = fs::read(&path)?;
+            let mut records: Map<String, Value> = serde_json::from_slice(&bytes)?;
+            if clean_records(&mut records, &sources, &selected, compatible) {
+                if writer_running()? {
+                    return Ok(CacheCleanup::Pending);
+                }
+                if fs::read(&path)? != bytes {
+                    return Err("Usage Monitor cache changed during cleanup".into());
+                }
+                replace_file(&path, &serde_json::to_vec(&records)?)?;
+            }
+            Ok(CacheCleanup::Complete)
+        })?;
+        if let CacheCleanup::Pending = result {
+            return Ok(result);
+        }
+    }
+    Ok(CacheCleanup::Complete)
+}
 
 fn reads_history(home: &Path) -> bool {
     if !super::plugin_install::installed(home).is_ok_and(|v| v.is_some()) {
@@ -257,6 +360,90 @@ fn clean_records(
     changed
 }
 
+/// Migration archives Usage Monitor keeps for these sessions, as (lowercase ID, archive path)
+pub(super) fn migration_archives(
+    root: &Path,
+    ids: &HashSet<String>,
+) -> Result<BTreeSet<(String, PathBuf)>> {
+    let mut archives = BTreeSet::new();
+    if ids.is_empty() {
+        return Ok(archives);
+    }
+    let source = match root.file_name().and_then(|name| name.to_str()) {
+        Some("antigravity") => "desktop",
+        Some("antigravity-cli") => "cli",
+        _ => return Ok(archives),
+    };
+    let Some(base) = root.parent() else {
+        return Ok(archives);
+    };
+    let archive = Path::new("session-migration-backups/archived-sources").join(source);
+    let data_dirs = [
+        "antigravity",
+        "antigravity-cli",
+        "antigravity-ide",
+        "antigravity-idea",
+    ]
+    .into_iter()
+    .flat_map(|store| PANEL_DATA_DIRS.map(|data| Path::new(store).join(data)))
+    .chain([PathBuf::from(
+        "config/plugins/usage-monitor/sidecars/panel/.data",
+    )]);
+    for data in data_dirs {
+        let Some(dir) = checked_path(base, &data.join(&archive))? else {
+            continue;
+        };
+        for entry in fs::read_dir(dir)? {
+            let entry = entry?;
+            let name = entry.file_name();
+            let Some((id, _)) = name
+                .to_str()
+                .and_then(|name| name.strip_suffix(".db"))
+                .and_then(|stem| stem.split_once('_'))
+            else {
+                continue;
+            };
+            let id = id.to_ascii_lowercase();
+            if ids.contains(&id) && entry.file_type()?.is_file() {
+                archives.insert((id, entry.path()));
+            }
+        }
+    }
+    Ok(archives)
+}
+
+/// A full move archives the source, removes its `.db`, and gives the destination a new UUID that
+/// can still reference the source brain. A failed move keeps the source `.db` beside the archive
+pub(super) fn protect_moved_attachments(
+    root: &Path,
+    archives: &BTreeSet<(String, PathBuf)>,
+) -> Result<()> {
+    for (id, _) in archives {
+        if checked_file(root, &format!("conversations/{id}.db"))?.is_none() {
+            return Err(format!(
+                "Usage Monitor archived session {id} during migration. Its source attachments may still be in use"
+            )
+            .into());
+        }
+    }
+    Ok(())
+}
+
+/// Refuse to commit if Usage Monitor archived a session while cleanup was running
+pub(super) fn protect_new_archives(
+    root: &Path,
+    ids: &HashSet<String>,
+    before: &BTreeSet<(String, PathBuf)>,
+) -> Result<()> {
+    if let Some((id, _)) = migration_archives(root, ids)?.difference(before).next() {
+        return Err(format!(
+            "Usage Monitor archived session {id} during cleanup. Its source attachments may still be in use"
+        )
+        .into());
+    }
+    Ok(())
+}
+
 // Standalone Usage Monitor can still republish its in-memory cache after Antigravity exits
 pub(super) fn writer_running() -> Result<bool> {
     let mut system = System::new()?;
@@ -294,108 +481,6 @@ pub(super) fn writer_running() -> Result<bool> {
         }
     }
     Ok(false)
-}
-
-pub(super) enum CacheCleanup {
-    Complete,
-    Pending,
-}
-
-pub(super) fn clean(
-    home: &Path,
-    cleaned: &Cleaned,
-    writer_running: fn() -> Result<bool>,
-) -> Result<CacheCleanup> {
-    // A writer may still hold records it has never flushed to disk
-    if writer_running()? {
-        return Ok(CacheCleanup::Pending);
-    }
-    let mut roots = strict_roots(home, DESKTOP)?;
-    roots.extend(strict_roots(home, CLI)?);
-    let mut caches = BTreeSet::new();
-    for root in &roots {
-        for data in [
-            "sidecar_data/usage-monitor/panel/data",
-            "sidecar_data/usage-monitor/data",
-        ] {
-            let relative = root.strip_prefix(home)?.join(data).join(CACHE);
-            if let Some(file) = checked_path(home, &relative)? {
-                caches.insert(file);
-            }
-        }
-    }
-    if let Some(file) = checked_file(home, &format!("{PLUGIN}/sidecars/panel/.data/{CACHE}"))? {
-        caches.insert(file);
-    }
-    if caches.is_empty() {
-        return Ok(CacheCleanup::Complete);
-    }
-
-    let compatible = reads_history(home);
-    let mut sources = Sources {
-        external_complete: compatible,
-        ..Sources::default()
-    };
-    let mut locks = Vec::new();
-    // IDE files can keep a copy alive even though Anti-Power only deletes App and CLI sessions
-    for root in roots
-        .into_iter()
-        .chain([".gemini/antigravity-ide", ".gemini/antigravity-idea"].map(|p| home.join(p)))
-    {
-        if checked_path(home, root.strip_prefix(home)?)?.is_none() {
-            continue;
-        }
-        let is_app = root == home.join(".gemini/antigravity");
-        let is_cli = root.ends_with("antigravity-cli");
-        if (is_app || is_cli) && root != cleaned.root {
-            locks.push(store_read_lock(&root)?);
-        }
-        sources.live.extend(live_ids(
-            home,
-            &root,
-            if is_app { DESKTOP } else { CLI },
-            None,
-        )?);
-        if sources.external_complete && sources.read_external(&root).is_err() {
-            sources.external_complete = false;
-        }
-        if is_app || is_cli {
-            for name in ["brain", "conversations"] {
-                if let Some(dir) = checked_path(&root, Path::new(name))? {
-                    sources.dirs.insert(dir);
-                    sources.app |= is_app;
-                    sources.cli |= is_cli;
-                }
-            }
-        }
-    }
-
-    let selected = cleaned
-        .ids
-        .iter()
-        .map(|id| id.to_ascii_lowercase())
-        .collect();
-    for file in caches {
-        let result = with_store_lock(file.parent().ok_or("Invalid cache path")?, |dir| {
-            let path = checked_file(dir, CACHE)?.ok_or("Usage Monitor cache moved")?;
-            let bytes = fs::read(&path)?;
-            let mut records: Map<String, Value> = serde_json::from_slice(&bytes)?;
-            if clean_records(&mut records, &sources, &selected, compatible) {
-                if writer_running()? {
-                    return Ok(CacheCleanup::Pending);
-                }
-                if fs::read(&path)? != bytes {
-                    return Err("Usage Monitor cache changed during cleanup".into());
-                }
-                replace_file(&path, &serde_json::to_vec(&records)?)?;
-            }
-            Ok(CacheCleanup::Complete)
-        })?;
-        if let CacheCleanup::Pending = result {
-            return Ok(result);
-        }
-    }
-    Ok(CacheCleanup::Complete)
 }
 
 #[cfg(test)]

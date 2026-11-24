@@ -4,6 +4,24 @@
 
 ---
 
+## v5.4.0 (2026-11-24)
+
+### Interface
+- Redesign the window with a toolbar above two cards and a navy, rust, and bronze palette across dark and light themes
+- Switch session sources with a segmented control showing installed App and CLI versions, and list each session's source, time, and project under its title; add a toggle to hide index-only sessions (full-ID search still shows matches)
+- Reveal the project directory and session file in the file manager from session details
+
+### Conversation view
+- Render assistant replies as Markdown (headings, lists, task lists, tables, code blocks); show raw HTML as text and never load remote images
+- Render local file links as chips that reveal in the file manager, and open web links in the system browser
+- Show user messages as right-aligned bubbles and group consecutive replies; collapse long messages by default and offer a jump to the latest message when scrolled away
+
+### Session cleanup
+- Clear matching index-only records in other sources after deleting a complete session, and clear confirmed leftover indexes that have no session files, attachments, or migration archive in any local source
+- Refuse to delete source leftovers after a full Usage Monitor migration so migrated sessions keep their attachments; archives from failed moves do not block deletion, and custom `--data-dir` paths are not checked
+
+---
+
 ## v5.3.0 (2026-11-22)
 
 ### Usage Monitor

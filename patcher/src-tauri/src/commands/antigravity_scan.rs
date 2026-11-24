@@ -25,6 +25,7 @@ struct Candidate {
 
 type Candidates = BTreeMap<String, Candidate>;
 type Parents = HashMap<String, String>;
+type ScanResult<T> = Result<T, Box<dyn std::error::Error>>;
 
 pub(super) fn scan(home: &Path, provider_id: &str) -> Result<Vec<SessionMeta>, String> {
     let mut sessions = Vec::new();
@@ -110,52 +111,10 @@ pub(super) fn live_ids(
     root: &Path,
     provider_id: &str,
     selected: Option<&BTreeSet<String>>,
-) -> Result<HashSet<String>, Box<dyn std::error::Error>> {
+) -> ScanResult<HashSet<String>> {
     checked_path(home, root.strip_prefix(home)?)?.ok_or("Antigravity store no longer exists")?;
-    let mut ids = HashSet::new();
-    // An active transaction may still put its saved databases back
-    for entry in fs::read_dir(root)? {
-        if entry?
-            .file_name()
-            .to_string_lossy()
-            .starts_with(STAGE_PREFIX)
-        {
-            return Err("Session cleanup is in progress".into());
-        }
-    }
-    if let Some(path) = checked_path(root, Path::new(INDEX_DB))? {
-        let db = open_db(&path)?;
-        for table in [
-            "conversation_summaries",
-            "conversations_fts",
-            "conversation_parents",
-        ] {
-            if !db.query_row(
-                "SELECT EXISTS(SELECT 1 FROM sqlite_schema WHERE name=?1)",
-                [table],
-                |row| row.get::<_, bool>(0),
-            )? {
-                continue;
-            }
-            let mut stmt = db.prepare(&format!("SELECT DISTINCT conversation_id FROM {table}"))?;
-            for id in stmt.query_map([], |row| row.get::<_, String>(0))? {
-                ids.insert(id?);
-            }
-        }
-    }
-    if let Some(path) = checked_path(root, Path::new(index_name(provider_id)))? {
-        ids.extend(indexed_ids(&fs::read(path)?, provider_id == DESKTOP, true)?);
-    }
-    if let Some(path) = checked_path(root, Path::new(METADATA))? {
-        let metadata: Value = serde_json::from_reader(File::open(path)?)?;
-        ids.extend(
-            metadata["conversations"]
-                .as_object()
-                .ok_or("Unknown session metadata format")?
-                .keys()
-                .cloned(),
-        );
-    }
+    require_idle_store(root)?;
+    let mut ids = store_index_ids(root, provider_id)?;
     if let Some(path) = checked_path(root, Path::new(RECENTS))? {
         let recent: BTreeMap<String, String> = serde_json::from_reader(File::open(path)?)?;
         ids.extend(recent.into_values());
@@ -186,7 +145,65 @@ pub(super) fn live_ids(
             }
         }
     }
+    ids.extend(store_artifact_ids(root)?);
+    Ok(ids.into_iter().map(|id| id.to_ascii_lowercase()).collect())
+}
+
+pub(super) fn require_idle_store(root: &Path) -> ScanResult<()> {
+    // An active or interrupted transaction may still put its saved databases back
+    for entry in fs::read_dir(root)? {
+        if entry?
+            .file_name()
+            .to_string_lossy()
+            .starts_with(STAGE_PREFIX)
+        {
+            return Err(format!("Session cleanup is in progress at {}", root.display()).into());
+        }
+    }
+    Ok(())
+}
+
+pub(super) fn store_index_ids(root: &Path, provider_id: &str) -> ScanResult<HashSet<String>> {
+    let mut ids = HashSet::new();
+    if let Some(path) = checked_file(root, INDEX_DB)? {
+        let db = open_db(&path)?;
+        for table in [
+            "conversation_summaries",
+            "conversations_fts",
+            "conversation_parents",
+        ] {
+            if !db.query_row(
+                "SELECT EXISTS(SELECT 1 FROM sqlite_schema WHERE name=?1)",
+                [table],
+                |row| row.get::<_, bool>(0),
+            )? {
+                continue;
+            }
+            let mut stmt = db.prepare(&format!("SELECT DISTINCT conversation_id FROM {table}"))?;
+            for id in stmt.query_map([], |row| row.get::<_, String>(0))? {
+                ids.insert(id?);
+            }
+        }
+    }
+    if let Some(path) = checked_file(root, index_name(provider_id))? {
+        ids.extend(indexed_ids(&fs::read(path)?, provider_id == DESKTOP, true)?);
+    }
+    if let Some(path) = checked_file(root, METADATA)? {
+        let metadata: Value = serde_json::from_reader(File::open(path)?)?;
+        ids.extend(
+            metadata["conversations"]
+                .as_object()
+                .ok_or("Unknown session metadata format")?
+                .keys()
+                .cloned(),
+        );
+    }
+    Ok(ids)
+}
+
+pub(super) fn store_artifact_ids(root: &Path) -> ScanResult<HashSet<String>> {
     // Names themselves are evidence, even when an artifact is empty or unreadable
+    let mut ids = HashSet::new();
     for dir in ["brain", "conversations", "annotations", "presence"] {
         if let Some(path) = checked_path(root, Path::new(dir))? {
             for entry in fs::read_dir(path)? {
@@ -194,12 +211,12 @@ pub(super) fn live_ids(
                 let text = name.to_string_lossy();
                 let id = text.split('.').next().unwrap_or_default();
                 if valid_id(id) {
-                    ids.insert(id.to_owned());
+                    ids.insert(id.to_ascii_lowercase());
                 }
             }
         }
     }
-    Ok(ids.into_iter().map(|id| id.to_ascii_lowercase()).collect())
+    Ok(ids)
 }
 
 fn checked_root(home: &Path, root: &Path) -> io::Result<()> {

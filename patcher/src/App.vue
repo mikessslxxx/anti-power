@@ -81,8 +81,8 @@ onUnmounted(() => {
   min-height: 0;
   display: grid;
   grid-template-rows: minmax(0, 1fr);
-  width: min(1120px, 100%);
+  width: min(1200px, 100%);
   margin: 0 auto;
-  padding: 20px 24px;
+  padding: 16px 20px 20px;
 }
 </style>

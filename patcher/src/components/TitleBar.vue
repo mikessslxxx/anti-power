@@ -145,14 +145,14 @@ const closeWindow = async () => {
  */
 const initTheme = () => {
   const savedTheme = localStorage.getItem(THEME_STORAGE_KEY);
-  
+
   if (savedTheme) {
     isDark.value = savedTheme === THEME_DARK;
   } else {
     // Match the original dark theme by default
     isDark.value = true;
   }
-  
+
   applyTheme();
 };
 
@@ -200,7 +200,7 @@ const isMac = navigator.platform.toLowerCase().includes('mac');
   position: absolute;
   inset: 0 0 auto;
   height: 1px;
-  background: linear-gradient(90deg, transparent, rgba(255, 255, 255, 0.08), transparent);
+  background: linear-gradient(90deg, transparent, var(--ag-border), transparent);
   pointer-events: none;
 }
 
@@ -209,8 +209,8 @@ const isMac = navigator.platform.toLowerCase().includes('mac');
   position: absolute;
   inset: auto 0 0;
   height: 1px;
-  background: linear-gradient(90deg, transparent, rgba(51, 118, 205, 0.2), transparent);
-  opacity: 0.6;
+  background: linear-gradient(90deg, transparent, var(--ag-accent-glow), transparent);
+  opacity: 0.5;
   pointer-events: none;
 }
 
@@ -305,7 +305,7 @@ const isMac = navigator.platform.toLowerCase().includes('mac');
 .titlebar-btn::before {
   content: '';
   position: absolute;
-  inset: 8px 4px;
+  inset: 7px 3px;
   background: transparent;
   border-radius: var(--radius-sm);
   transition: background var(--transition-fast);
@@ -317,7 +317,7 @@ const isMac = navigator.platform.toLowerCase().includes('mac');
 }
 
 .titlebar-btn:hover::before {
-  background: rgba(204, 204, 204, 0.1);
+  background: var(--ag-hover);
 }
 
 .lang-btn {
@@ -365,7 +365,7 @@ const isMac = navigator.platform.toLowerCase().includes('mac');
 }
 
 .about-btn:hover::before {
-  background: rgba(255, 255, 255, 0.06);
+  background: var(--ag-hover);
 }
 
 .close-btn:hover {
@@ -373,7 +373,7 @@ const isMac = navigator.platform.toLowerCase().includes('mac');
 }
 
 .close-btn:hover::before {
-  background: var(--ag-error) !important;
+  background: var(--ag-error-solid) !important;
 }
 
 .titlebar-btn svg {

@@ -5,7 +5,7 @@
 <h1 align="center">Anti-Power</h1>
 
 <p align="center">
-  <a href="https://github.com/mikessslxxx/anti-power/releases"><img src="https://img.shields.io/badge/版本-v5.3.0-blue.svg" alt="版本"></a>
+  <a href="https://github.com/mikessslxxx/anti-power/releases"><img src="https://img.shields.io/badge/版本-v5.4.0-blue.svg" alt="版本"></a>
   <img src="https://img.shields.io/badge/Antigravity_App-2.34.0-green.svg" alt="Antigravity App">
   <img src="https://img.shields.io/badge/Antigravity_CLI-1.5.14-green.svg" alt="Antigravity CLI">
 </p>
@@ -21,13 +21,13 @@
 - 列出 Antigravity App (`~/.gemini/antigravity`) 和 Antigravity CLI (`~/.gemini/antigravity-cli`) 的会话, 也识别 CC Switch 的 `~/.cc-switch/agy/<profile>/antigravity-cli`
 - 按标题, 项目或会话 ID 搜索, 按来源 (显示检测到的客户端版本) 筛选并查看消息
 - 单条或批量删除, 逐条显示结果
-- 标出只剩索引的残留记录 (其他工具删掉会话文件后留下的), 可照常删除
+- 标出只剩索引的残留记录 (其他工具删掉会话文件后留下的), 可隐藏或删除
 
 已在 macOS 上用 Antigravity App 2.34.0 和 Antigravity CLI 1.5.14 核对. Windows 和 Linux 安装包尚未实测. 不支持 Antigravity IDE (`~/.gemini/antigravity-ide`).
 
 ## 清理范围
 
-按来源和会话 ID 精确清理, 删除后 CC Switch 等工具刷新也不会再列出:
+按来源和会话 ID 清理以下数据:
 
 | 位置 | 内容 |
 |------|------|
@@ -44,7 +44,9 @@
 | `sidecar_data/anti-power-usage/` 下的 `ledger.json` | 旧版 Anti-Power Usage 中该会话的合计, 并入匿名的 "已删除会话" |
 
 - 子代理会话随所属会话一起删除, `/fork` 出的会话独立保留.
-- 同一 ID 可能同时出现在 Antigravity App 和 Antigravity CLI 中, 两边分别显示; 若要一并清除, 需分别勾选.
+- 删除完整会话后一并清理其他来源中同 ID 的仅索引记录; 多个来源都有完整副本时需分别勾选.
+- 删除前扫描各本地来源, 将无会话文件, 附件和已知迁移归档的历史残留索引计入确认框, 并在删除成功后一并清理 (无法完成核对时跳过).
+- 在 Usage Monitor 标准数据目录中检测到完整迁移归档时拒绝删除源端残留, 以保留迁入会话可能引用的附件 (不检查自定义 `--data-dir`, 删除前请确认附件未被引用).
 - Antigravity App 数据目录在 macOS 上是 `~/Library/Application Support/Antigravity`, Windows 上是 `%APPDATA%\Antigravity`, Linux 上是 `~/.config/Antigravity`.
 - 不清理运行日志 (`log/`), 也不清理写到 `/tmp` 或项目目录里的文件.
 - 清理后会压缩 `conversation_summaries.db` 以清除已删记录碎片 (若正被其他工具读取则延至下次清理); 已删文件不做磁盘级擦除.
@@ -52,8 +54,8 @@
 界面上方有三个默认关闭的可选项, 勾选状态会被记住:
 
 - **Antigravity App 浏览器缓存**: 清空 Antigravity App 数据目录下的 `Cache/` 和 `Code Cache/`. 这两个目录无法按会话过滤, 可能留有会话 ID; Antigravity App 会自动重建, 下次启动稍慢.
-- **CC Switch 同步记录**: 从 `~/.cc-switch/` 的 `cc-switch.db` 及 `backups/*.db` 中删除所选会话及在对应来源中已无痕迹会话的同步进度 (`session_log_sync`), 并压缩数据库 (CC Switch 运行时跳过主库压缩, 退出后刷新即可复查). 不含对话正文的用量与费用历史会保留.
-- **Usage Monitor 会话记录**: 清除已无本地副本的 App 和 CLI 会话缓存的标题与提问, 保留用量和费用历史; 已安装的插件具备匹配的独立用量记录时移除原对话条目, 否则保留脱敏占位行. 独立运行的 Usage Monitor 可保持打开 (本地会话照常删除, 退出 Usage Monitor 后刷新即可完成缓存清理).
+- **CC Switch 同步记录**: 从 `~/.cc-switch/` 的 `cc-switch.db` 及 `backups/*.db` 中删除所选会话及对应来源已无残留会话的同步进度 (`session_log_sync`), 并压缩数据库 (CC Switch 运行时跳过主库压缩, 退出后刷新即可复查). 不含对话正文的用量与费用历史会保留.
+- **Usage Monitor 会话记录**: 清除无本地副本的 App 和 CLI 会话缓存标题与提问, 保留用量和费用历史; 插件已有匹配的独立用量记录时移除原条目, 否则保留脱敏占位行. 独立运行的 Usage Monitor 可保持打开 (本地会话照常删除, 退出 Usage Monitor 后刷新即可完成缓存清理).
 
 应用数据目录, CC Switch 和 Usage Monitor 的清理在会话删除提交后执行; 若失败, 会话不会回滚, 结果中会列出未清理项.
 

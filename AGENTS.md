@@ -13,15 +13,17 @@ Anti-Power installs or uninstalls the official upstream Usage Monitor release.
 - `patcher/src-tauri/src/commands/`: Rust backend
   - `antigravity_store.rs`: store roots, ID validation, symlink-safe path resolution
   - `antigravity_scan.rs`: session listing and message loading
-  - `antigravity_clean.rs`: session cleanup
-  - `cleanup_extras.rs`: Antigravity App window state and caches, CC Switch sync records, and usage ledger cleanup
-  - `usage_monitor.rs`: optional cleanup of deleted local session details in Usage Monitor
+  - `antigravity_clean.rs`: session deletion, store transactions, and recovery
+  - `index_only.rs`: matching and leftover index-only target selection and validation
+  - `cc_switch.rs`: CC Switch sync record cleanup
+  - `usage_monitor.rs`: Usage Monitor attachment protection and session cache cleanup
+  - `cleanup_extras.rs`: Antigravity App window state, browser caches, and usage ledger cleanup
   - `usage_ledger.rs`: folding removed sessions into Anti-Power Usage's deleted totals
   - `client_versions.rs`: installed App and CLI versions for the session source selector
   - `plugin_install.rs`: download, install and uninstall Usage Monitor
   - `plugin_links.rs`: patch Anti-Power navigation links into Usage Monitor
-  - `sessions.rs`: session Tauri commands (`scan_sessions`, `load_session_messages`, `delete_sessions`)
-- `patcher/src/`: Vue frontend; `components/SessionViewer.vue` is the main view
+  - `sessions.rs`: session Tauri commands (`scan_sessions`, `load_session_messages`, `preview_orphan_indexes`, `delete_sessions`)
+- `patcher/src/`: Vue frontend; `components/SessionViewer.vue` is the main view, `components/SessionMessages.vue` renders a conversation (Markdown via `markdown.ts`)
 - `patcher/src/locales/`: `zh-CN` and `en-US` strings
 - `.github/workflows/release.yml`: installer builds for Windows, macOS, and Linux
 
@@ -39,9 +41,11 @@ Last checked on macOS against Antigravity App 2.34.0 and Antigravity CLI 1.5.14.
 ## Cleanup rules
 
 - Refuse session cleanup while the Antigravity App, Antigravity CLI, or Antigravity IDE is running. CC Switch and Usage Monitor can stay open (cache cleanup stays pending until the next scan after Usage Monitor exits).
+- Refuse cleanup when a standard Usage Monitor data directory has a migration archive and the source `.db` is gone, and roll back if a new archive appears before commit, to preserve source attachments.
 - Never follow symlinks inside a store.
 - Stage files in `.anti-power-clean-*` and record the commit in the index transaction. After an interruption, restore uncommitted files and finish committed deletions. A scan reports a failed recovery as a warning and still lists sessions.
-- Clean each store in one pass for a batch: one transaction, one FTS rebuild, one `VACUUM`. When a batch fails, retry sessions one by one unless the failure is store-wide.
+- Clean each store in one pass per round (one transaction, one FTS rebuild, one `VACUUM`); on batch failure, retry sessions individually unless the error is store-wide.
+- After a selected deletion succeeds, clear matching index-only records in other sources and previewed leftover indexes (rechecking artifacts and migration archives across known local stores before commit).
 - Fail without changes when a summary index has an unknown layout.
 - Clean data outside the stores after the stores commit via persisted receipts (`.anti-power-extras-*`, `.anti-power-sync-pending`), retrying unfinished work on later scans and reporting failures as warnings.
 - Nested agent runs (`nesting_depth > 0`) go with their parent. Forks stay.
@@ -63,7 +67,7 @@ Tests build synthetic stores in temporary directories. Never run cleanup against
 ## Conventions
 
 - Keep code and docs short.
-- Code comments are in English, with one space after the comment marker and no trailing period.
-- Docs use English punctuation in both languages.
-- Leave published release notes and changelog entries as they are.
+- Keep code comments in English, with one space after the comment marker and no trailing period.
+- Keep paired Chinese and English docs (`AGENTS*`, `README*`, `CHANGELOG*`) in sync, using English punctuation in both.
+- Reuse the current `CHANGELOG.md` and `CHANGELOG_EN.md` entries verbatim in `release-notes.md`; leave published entries as they are.
 - `patcher/package.json`, `patcher/src-tauri/tauri.conf.json`, and `patcher/src-tauri/Cargo.toml` share one version number.
