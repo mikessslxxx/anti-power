@@ -91,6 +91,7 @@ jobs:
     needs: build
     runs-on: ubuntu-latest
     permissions:
+      actions: write
       contents: write
 
     steps:
@@ -128,3 +129,17 @@ jobs:
             release-files/anti-power-linux.AppImage
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Delete older Release runs
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          old_runs=$(gh api --paginate --method GET \
+            "repos/$GITHUB_REPOSITORY/actions/workflows/release.yml/runs" \
+            -f status=completed -F per_page=100 \
+            --jq ".workflow_runs[] | select(.status == \"completed\" and .run_number < $GITHUB_RUN_NUMBER) | .id")
+          while IFS= read -r run_id; do
+            if [[ -n "$run_id" ]]; then
+              gh api --method DELETE "repos/$GITHUB_REPOSITORY/actions/runs/$run_id"
+            fi
+          done <<< "$old_runs"
