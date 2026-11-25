@@ -359,6 +359,16 @@ pub(super) fn recover_pending(home: &Path, provider_id: &str, recovery: &mut Rec
     }
 }
 
+pub(super) fn sweep_usage_monitor(home: &Path, recovery: &mut RecoveryStatus) {
+    let writer_running =
+        || Ok(running_clients()?.clients.contains(&true) || usage_monitor::writer_running()?);
+    match usage_monitor::sweep(home, writer_running) {
+        Ok(CacheCleanup::Complete) => {}
+        Ok(CacheCleanup::Pending) => recovery.usage_monitor_cleanup_pending = true,
+        Err(error) => recovery.warnings.push(format!("Usage Monitor: {error}")),
+    }
+}
+
 pub(super) fn recover_magpie_pending(home: &Path, recovery: &mut RecoveryStatus) -> bool {
     let Ok(Some(root)) = magpie_probes::root(home) else {
         return false;

@@ -17,7 +17,7 @@ Anti-Power 可安装或卸载上游 Usage Monitor 正式版.
   - `index_only.rs`: 同 ID 与历史残留索引的筛选和复核
   - `magpie_probes.rs`: Magpie agy 存储定位与空探测会话校验
   - `cc_switch.rs`: CC Switch 同步记录清理
-  - `usage_monitor.rs`: Usage Monitor 迁移附件保护与会话缓存清理
+  - `usage_monitor.rs`: Usage Monitor 迁移附件保护与会话记录清理
   - `cleanup_extras.rs`: Antigravity App 窗口状态, 浏览器缓存和用量账本清理
   - `usage_ledger.rs`: 将已删除会话折入 Anti-Power Usage 的匿名合计
   - `client_versions.rs`: 读取本机 App 和 CLI 版本, 供会话来源选择器显示
@@ -39,7 +39,7 @@ Magpie 清理使用 README 所述独立 `antigravity-cli/` 存储, 共用 CLI �
 
 会话由来源和 UUID 共同确定. 在每个根目录下, 一个会话可能出现在 `conversations/`, `brain/`, `annotations/`, `presence/`, `conversation_summaries.db` (摘要, 全文索引, 父子关系), 摘要索引, `cache/last_conversations.json`, `cache/conversation_metadata.json`, `history.jsonl` (Antigravity CLI 的输入历史) 和插件的 `sidecar_data/`. 存储目录之外, Antigravity App 在 `app_storage.json` 中保存窗口状态, CC Switch 在 `~/.cc-switch/cc-switch.db` 及其备份中保存同步进度. 清理和保留的范围见 README.
 
-最近在 macOS 上核对的版本是 Antigravity App 2.34.0 和 Antigravity CLI 1.5.14. Antigravity IDE (`~/.gemini/antigravity-ide`) 不在范围内.
+最近在 macOS 上核对的版本是 Antigravity App 2.35.1 和 Antigravity CLI 1.5.16. Antigravity IDE (`~/.gemini/antigravity-ide`) 不在范围内.
 
 ## 清理规则
 

@@ -4,6 +4,14 @@
 
 ---
 
+## v5.4.2 (2026-11-25)
+
+### Session cleanup
+- Support Usage Monitor 1.5.5's SQLite ledger and JSON migration backup, clearing titles and prompts for deleted sessions while keeping usage and costs
+- Select **Usage Monitor session history** and click **Refresh** to clean up previously deleted sessions
+
+---
+
 ## v5.4.1 (2026-11-24)
 
 ### Session cleanup

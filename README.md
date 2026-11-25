@@ -5,9 +5,9 @@
 <h1 align="center">Anti-Power</h1>
 
 <p align="center">
-  <a href="https://github.com/mikessslxxx/anti-power/releases"><img src="https://img.shields.io/badge/版本-v5.4.1-blue.svg" alt="版本"></a>
-  <img src="https://img.shields.io/badge/Antigravity_App-2.34.0-green.svg" alt="Antigravity App">
-  <img src="https://img.shields.io/badge/Antigravity_CLI-1.5.14-green.svg" alt="Antigravity CLI">
+  <a href="https://github.com/mikessslxxx/anti-power/releases"><img src="https://img.shields.io/badge/版本-v5.4.2-blue.svg" alt="版本"></a>
+  <img src="https://img.shields.io/badge/Antigravity_App-2.35.1-green.svg" alt="Antigravity App">
+  <img src="https://img.shields.io/badge/Antigravity_CLI-1.5.16-green.svg" alt="Antigravity CLI">
 </p>
 
 <p align="center">
@@ -24,7 +24,7 @@
 - 标出只剩索引的残留记录 (其他工具删掉会话文件后留下的), 可隐藏或删除
 - 预览并批量清理 Magpie 独立存储中的空模型探测会话
 
-已在 macOS 上用 Antigravity App 2.34.0 和 Antigravity CLI 1.5.14 核对. Windows 和 Linux 安装包尚未实测. 不支持 Antigravity IDE (`~/.gemini/antigravity-ide`).
+已在 macOS 上用 Antigravity App 2.35.1 和 Antigravity CLI 1.5.16 核对. Windows 和 Linux 安装包尚未实测. 不支持 Antigravity IDE (`~/.gemini/antigravity-ide`).
 
 ## 清理范围
 
@@ -56,7 +56,7 @@
 
 - **Antigravity App 浏览器缓存**: 清空 Antigravity App 数据目录下的 `Cache/` 和 `Code Cache/`. 这两个目录无法按会话过滤, 可能留有会话 ID; Antigravity App 会自动重建, 下次启动稍慢.
 - **CC Switch 同步记录**: 从 `~/.cc-switch/` 的 `cc-switch.db` 及 `backups/*.db` 中删除所选会话及对应来源已无残留会话的同步进度 (`session_log_sync`), 并压缩数据库 (CC Switch 运行时跳过主库压缩, 退出后刷新即可复查). 不含对话正文的用量与费用历史会保留.
-- **Usage Monitor 会话记录**: 清除无本地副本的 App 和 CLI 会话缓存标题与提问, 保留用量和费用历史; 插件已有匹配的独立用量记录时移除原条目, 否则保留脱敏占位行. 独立运行的 Usage Monitor 可保持打开 (本地会话照常删除, 退出 Usage Monitor 后刷新即可完成缓存清理).
+- **Usage Monitor 会话记录**: 清除无本地副本的 App 和 CLI 会话标题与提问 (覆盖 SQLite 账本, JSON 迁移备份和旧版缓存), 保留用量和费用历史. 勾选后退出 Antigravity 客户端和独立运行的 Usage Monitor, 点击 **刷新** 即可补扫已删会话.
 
 应用数据目录, CC Switch 和 Usage Monitor 的清理在会话删除提交后执行; 若失败, 会话不会回滚, 结果中会列出未清理项.
 

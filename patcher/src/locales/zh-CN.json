@@ -65,7 +65,7 @@
         "optionCcSwitch": "CC Switch 同步记录",
         "optionCcSwitchHint": "清理 ~/.cc-switch 主库及备份中所选及已无本地残留会话的同步记录，保留用量和费用；CC Switch 可保持运行",
         "optionUsageMonitor": "Usage Monitor 会话记录",
-        "optionUsageMonitorHint": "清除无本地副本会话的缓存标题与提问，保留用量和费用；插件已有匹配的独立用量记录时移除原条目",
+        "optionUsageMonitorHint": "清除无本地副本会话的标题与提问，保留用量和费用；勾选后点击「刷新」可补扫已删会话",
         "orphanIndexesDeleted": "另已清理 {count} 条历史残留索引",
         "orphanScanFailed": "无法核对历史残留索引，本次跳过：{error}",
         "projectDir": "项目",

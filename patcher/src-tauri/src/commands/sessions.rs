@@ -98,7 +98,7 @@ fn home_dir() -> Result<PathBuf, String> {
 
 /// List session metadata without loading message bodies
 #[tauri::command(async)]
-pub fn scan_sessions() -> Result<SessionList, String> {
+pub fn scan_sessions(sweep_usage_monitor: Option<bool>) -> Result<SessionList, String> {
     let home = home_dir()?;
     let mut sessions = Vec::new();
     let mut recovery = RecoveryStatus::default();
@@ -108,6 +108,9 @@ pub fn scan_sessions() -> Result<SessionList, String> {
     }
     sessions.sort_by_key(|session| Reverse(session.last_active_at));
     let magpie_store_available = antigravity_clean::recover_magpie_pending(&home, &mut recovery);
+    if sweep_usage_monitor == Some(true) && !recovery.usage_monitor_cleanup_pending {
+        antigravity_clean::sweep_usage_monitor(&home, &mut recovery);
+    }
     Ok(SessionList {
         sessions,
         magpie_store_available,

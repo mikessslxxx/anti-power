@@ -1,20 +1,25 @@
-//! Protect migrated session attachments and clean Usage Monitor session cache
+//! Protect migrated session attachments and clean Usage Monitor session data
 
 use super::antigravity_clean::{store_read_lock, with_store_lock};
 use super::antigravity_scan::live_ids;
 use super::antigravity_store::{checked_file, checked_path, strict_roots, valid_id, CLI, DESKTOP};
 use super::cleanup_extras::{replace_file, Cleaned};
+use rusqlite::{params, Connection, OpenFlags, TransactionBehavior};
 use serde_json::{Map, Value};
 use sha2::{Digest, Sha256};
-use std::collections::{BTreeSet, HashSet};
+use std::collections::{BTreeMap, BTreeSet, HashSet};
 use std::fs;
 use std::path::{Path, PathBuf};
+use std::time::Duration;
 use sysinfo::{ProcessRefreshKind, ProcessesToUpdate, System, UpdateKind};
 
 type Result<T> = std::result::Result<T, Box<dyn std::error::Error>>;
 const PLUGIN: &str = ".gemini/config/plugins/usage-monitor";
 const CACHE: &str = "trajectory_usage_cache.json";
+const BACKUP: &str = "trajectory_usage_cache.json.bak";
+const LEDGER: &str = "trajectory_store.sqlite";
 const DELETED: &str = "已删除会话 / Deleted session";
+const STEP_PROMPTS: [&str; 3] = ["turnPrompt", "turnPromptClean", "userPrompt"];
 const PANEL_DATA_DIRS: [&str; 2] = [
     "sidecar_data/usage-monitor/panel/data",
     "sidecar_data/usage-monitor/data",
@@ -47,45 +52,64 @@ pub(super) fn clean(
     cleaned: &Cleaned,
     writer_running: fn() -> Result<bool>,
 ) -> Result<CacheCleanup> {
-    // A writer may still hold records it has never flushed to disk
-    if writer_running()? {
-        return Ok(CacheCleanup::Pending);
-    }
+    clean_caches(home, Some(cleaned), writer_running)
+}
+
+pub(super) fn sweep(home: &Path, writer_running: fn() -> Result<bool>) -> Result<CacheCleanup> {
+    clean_caches(home, None, writer_running)
+}
+
+fn clean_caches(
+    home: &Path,
+    cleaned: Option<&Cleaned>,
+    writer_running: fn() -> Result<bool>,
+) -> Result<CacheCleanup> {
     let mut roots = strict_roots(home, DESKTOP)?;
     roots.extend(strict_roots(home, CLI)?);
-    let mut caches = BTreeSet::new();
+    // IDE sessions can keep a local copy alive and its panel can cache App and CLI sessions
+    roots.extend([".gemini/antigravity-ide", ".gemini/antigravity-idea"].map(|p| home.join(p)));
+    let mut data_dirs = vec![PathBuf::from(format!("{PLUGIN}/sidecars/panel/.data"))];
     for root in &roots {
-        for data in PANEL_DATA_DIRS {
-            let relative = root.strip_prefix(home)?.join(data).join(CACHE);
-            if let Some(file) = checked_path(home, &relative)? {
-                caches.insert(file);
+        let relative = root.strip_prefix(home)?;
+        data_dirs.extend(PANEL_DATA_DIRS.map(|data| relative.join(data)));
+    }
+    let mut caches = BTreeMap::new();
+    let mut errors = BTreeSet::new();
+    for dir in data_dirs {
+        for name in [CACHE, LEDGER, BACKUP] {
+            match checked_path(home, &dir.join(name)) {
+                Ok(Some(_)) => caches
+                    .entry(home.join(&dir))
+                    .or_insert_with(Vec::new)
+                    .push(name),
+                Ok(None) => {}
+                Err(error) => {
+                    errors.insert(error.to_string());
+                }
             }
         }
     }
-    if let Some(file) = checked_file(home, &format!("{PLUGIN}/sidecars/panel/.data/{CACHE}"))? {
-        caches.insert(file);
+    // A writer may still hold records it has never flushed to disk
+    if (cleaned.is_some() || !caches.is_empty()) && writer_running()? {
+        return Ok(CacheCleanup::Pending);
     }
     if caches.is_empty() {
-        return Ok(CacheCleanup::Complete);
+        return cache_cleanup_result(errors);
     }
 
-    let compatible = reads_history(home);
+    let compatible = caches.values().any(|names| names.contains(&CACHE)) && reads_history(home);
     let mut sources = Sources {
         external_complete: compatible,
         ..Sources::default()
     };
     let mut locks = Vec::new();
-    // IDE files can keep a copy alive even though Anti-Power only deletes App and CLI sessions
-    for root in roots
-        .into_iter()
-        .chain([".gemini/antigravity-ide", ".gemini/antigravity-idea"].map(|p| home.join(p)))
-    {
+    for root in roots {
         if checked_path(home, root.strip_prefix(home)?)?.is_none() {
             continue;
         }
         let is_app = root == home.join(".gemini/antigravity");
         let is_cli = root.ends_with("antigravity-cli");
-        if (is_app || is_cli) && root != cleaned.root {
+        if (is_app || is_cli) && cleaned.is_none_or(|group| group.root != root) {
             locks.push(store_read_lock(&root)?);
         }
         sources.live.extend(live_ids(
@@ -108,32 +132,170 @@ pub(super) fn clean(
         }
     }
 
-    let selected = cleaned
-        .ids
-        .iter()
+    let selected: BTreeSet<_> = cleaned
+        .into_iter()
+        .flat_map(|group| &group.ids)
         .map(|id| id.to_ascii_lowercase())
         .collect();
-    for file in caches {
-        let result = with_store_lock(file.parent().ok_or("Invalid cache path")?, |dir| {
-            let path = checked_file(dir, CACHE)?.ok_or("Usage Monitor cache moved")?;
-            let bytes = fs::read(&path)?;
-            let mut records: Map<String, Value> = serde_json::from_slice(&bytes)?;
-            if clean_records(&mut records, &sources, &selected, compatible) {
-                if writer_running()? {
-                    return Ok(CacheCleanup::Pending);
+    for (dir, files) in caches {
+        let result = with_store_lock(&dir, |dir| {
+            let mut backup_ids = selected.clone();
+            for name in files {
+                let result = (|| {
+                    let path = checked_file(dir, name)?.ok_or("Usage Monitor cache moved")?;
+                    if name == LEDGER {
+                        let Some(ids) = clean_sqlite(&path, &sources, &selected, writer_running)?
+                        else {
+                            return Ok(CacheCleanup::Pending);
+                        };
+                        backup_ids.extend(ids);
+                        return Ok(CacheCleanup::Complete);
+                    }
+                    let ids = if name == BACKUP {
+                        &backup_ids
+                    } else {
+                        &selected
+                    };
+                    clean_json_cache(
+                        &path,
+                        &sources,
+                        ids,
+                        name == CACHE && compatible,
+                        writer_running,
+                    )
+                })();
+                match result {
+                    Ok(CacheCleanup::Complete) => {}
+                    Ok(CacheCleanup::Pending) => return Ok(CacheCleanup::Pending),
+                    Err(error) => {
+                        errors.insert(format!("{}: {error}", dir.join(name).display()));
+                    }
                 }
-                if fs::read(&path)? != bytes {
-                    return Err("Usage Monitor cache changed during cleanup".into());
-                }
-                replace_file(&path, &serde_json::to_vec(&records)?)?;
             }
             Ok(CacheCleanup::Complete)
-        })?;
-        if let CacheCleanup::Pending = result {
-            return Ok(result);
+        });
+        match result {
+            Ok(CacheCleanup::Complete) => {}
+            Ok(CacheCleanup::Pending) => return Ok(CacheCleanup::Pending),
+            Err(error) => {
+                errors.insert(format!("{}: {error}", dir.display()));
+            }
         }
     }
+    cache_cleanup_result(errors)
+}
+
+fn cache_cleanup_result(errors: BTreeSet<String>) -> Result<CacheCleanup> {
+    if errors.is_empty() {
+        Ok(CacheCleanup::Complete)
+    } else {
+        Err(errors.into_iter().collect::<Vec<_>>().join("\n").into())
+    }
+}
+
+fn clean_json_cache(
+    path: &Path,
+    sources: &Sources,
+    ids: &BTreeSet<String>,
+    compatible: bool,
+    writer_running: fn() -> Result<bool>,
+) -> Result<CacheCleanup> {
+    let bytes = fs::read(path)?;
+    let mut records: Map<String, Value> = serde_json::from_slice(&bytes)?;
+    if clean_records(&mut records, sources, ids, compatible) {
+        if writer_running()? {
+            return Ok(CacheCleanup::Pending);
+        }
+        if fs::read(path)? != bytes {
+            return Err("Usage Monitor cache changed during cleanup".into());
+        }
+        replace_file(path, &serde_json::to_vec(&records)?)?;
+    }
     Ok(CacheCleanup::Complete)
+}
+
+fn clean_sqlite(
+    path: &Path,
+    sources: &Sources,
+    selected: &BTreeSet<String>,
+    writer_running: fn() -> Result<bool>,
+) -> Result<Option<BTreeSet<String>>> {
+    let dir = path.parent().ok_or("Invalid Usage Monitor ledger path")?;
+    for suffix in ["-wal", "-shm", "-journal"] {
+        checked_file(dir, &format!("{LEDGER}{suffix}"))?;
+    }
+    let mut conn = Connection::open_with_flags(
+        path,
+        OpenFlags::SQLITE_OPEN_READ_WRITE | OpenFlags::SQLITE_OPEN_NOFOLLOW,
+    )?;
+    conn.busy_timeout(Duration::from_secs(2))?;
+    conn.pragma_update(None, "trusted_schema", false)?;
+    conn.pragma_update(None, "secure_delete", true)?;
+    let tx = conn.transaction_with_behavior(TransactionBehavior::Immediate)?;
+    let version: String = tx.query_row(
+        "SELECT value FROM ledger_meta WHERE key = 'schema_version'",
+        [],
+        |row| row.get(0),
+    )?;
+    if version != "1" {
+        return Err(format!("Unsupported Usage Monitor ledger schema: {version}").into());
+    }
+
+    let mut matched = BTreeSet::new();
+    let mut changed = false;
+    {
+        let mut list =
+            tx.prepare("SELECT cascade_id, is_archived, meta_json FROM conversations")?;
+        let mut rows = list.query([])?;
+        let mut targets = Vec::new();
+        while let Some(row) = rows.next()? {
+            let id: String = row.get(0)?;
+            if !valid_id(&id) {
+                continue;
+            }
+            let archived: bool = row.get(1)?;
+            let meta: Value = serde_json::from_str(row.get_ref(2)?.as_str()?)?;
+            let lower = id.to_ascii_lowercase();
+            if sources.missing(&lower, &meta, selected, archived) {
+                matched.insert(lower);
+                targets.push((id, archived, meta));
+            }
+        }
+        let mut update_meta = tx.prepare(
+            "UPDATE conversations SET meta_json = ?2, is_archived = 1 WHERE cascade_id = ?1",
+        )?;
+        let mut update_steps = tx.prepare(
+            "UPDATE steps SET detail_json = json_remove(detail_json, ?2, ?3, ?4)
+             WHERE cascade_id = ?1 AND (json_type(detail_json, ?2) IS NOT NULL
+                 OR json_type(detail_json, ?3) IS NOT NULL OR json_type(detail_json, ?4) IS NOT NULL)",
+        )?;
+        let paths = STEP_PROMPTS.map(|field| format!("$.{field}"));
+        for (id, archived, mut meta) in targets {
+            if redact_header(&mut meta) || !archived {
+                update_meta.execute(params![id, serde_json::to_string(&meta)?])?;
+                changed = true;
+            }
+            changed |= update_steps.execute(params![id, paths[0], paths[1], paths[2]])? > 0;
+        }
+    }
+    if changed {
+        // Force cached readers to reload even when only step details changed
+        tx.execute(
+            "UPDATE ledger_meta SET value = CAST(value AS INTEGER) + 1 WHERE key = 'ledger_epoch'",
+            [],
+        )?;
+        if writer_running()? {
+            return Ok(None);
+        }
+    }
+    tx.commit()?;
+    if !matched.is_empty() {
+        let busy: i64 = conn.query_row("PRAGMA wal_checkpoint(TRUNCATE)", [], |row| row.get(0))?;
+        if busy != 0 {
+            return Ok(None);
+        }
+    }
+    Ok(Some(matched))
 }
 
 fn reads_history(home: &Path) -> bool {
@@ -203,7 +365,7 @@ fn covers_usage(record: &Value, archive: &Value) -> bool {
         })
 }
 
-fn redact(record: &mut Value) -> bool {
+fn redact_header(record: &mut Value) -> bool {
     let mut changed = false;
     if record["title"].as_str() != Some(DELETED) {
         record["title"] = DELETED.into();
@@ -221,6 +383,11 @@ fn redact(record: &mut Value) -> bool {
             changed |= spec.remove("role").is_some();
         }
     }
+    changed
+}
+
+fn redact(record: &mut Value) -> bool {
+    let mut changed = redact_header(record);
     for step in record
         .get_mut("steps")
         .and_then(Value::as_array_mut)
@@ -228,7 +395,7 @@ fn redact(record: &mut Value) -> bool {
         .flatten()
     {
         if let Some(fields) = step.as_object_mut() {
-            for key in ["turnPrompt", "turnPromptClean", "userPrompt"] {
+            for key in STEP_PROMPTS {
                 changed |= fields.remove(key).is_some();
             }
         }
@@ -247,7 +414,13 @@ struct Sources {
 }
 
 impl Sources {
-    fn missing(&self, id: &str, record: &Value, selected: &BTreeSet<String>) -> bool {
+    fn missing(
+        &self,
+        id: &str,
+        record: &Value,
+        selected: &BTreeSet<String>,
+        archived: bool,
+    ) -> bool {
         if self.live.contains(id)
             || !record.is_object()
             || record
@@ -272,7 +445,8 @@ impl Sources {
         }
         selected.contains(id)
             || known_source
-                && (record["diskMtimeMs"].as_f64().is_some_and(|ms| ms > 0.0)
+                && (archived
+                    || record["diskMtimeMs"].as_f64().is_some_and(|ms| ms > 0.0)
                     || record["offlineSqliteTelemetry"] == true
                     || record["diskFileSig"]
                         .as_str()
@@ -334,7 +508,7 @@ fn clean_records(
     let mut mask = Vec::new();
     for (key, row) in records.iter().filter(|(key, _)| valid_id(key)) {
         let id = key.to_ascii_lowercase();
-        if !sources.missing(&id, row, selected) {
+        if !sources.missing(&id, row, selected, row["archived"] == true) {
             continue;
         }
         if compatible
@@ -503,6 +677,156 @@ mod tests {
         let row = json!({"title":"private title", "swarmMeta":{"title":"private swarm","other":1},
             "diskMtimeMs":1200,"appSource":"cli","accountName":"test","steps":[step]});
         (row, archive)
+    }
+
+    #[test]
+    fn unreadable_ledger_does_not_block_json_cleanup() {
+        let temp = tempfile::tempdir().unwrap();
+        let home = temp.path();
+        let cli = home.join(".gemini/antigravity-cli");
+        fs::create_dir_all(cli.join("conversations")).unwrap();
+        let data = cli.join(PANEL_DATA_DIRS[0]);
+        fs::create_dir_all(&data).unwrap();
+        let (mut row, _) = fixture();
+        for name in [CACHE, BACKUP] {
+            fs::write(data.join(name), json!({GONE:row}).to_string()).unwrap();
+        }
+        fs::write(data.join(LEDGER), b"bad ledger").unwrap();
+
+        let error = sweep(home, || Ok(false)).err().unwrap();
+        assert!(error.to_string().contains(LEDGER));
+        assert_eq!(fs::read(data.join(LEDGER)).unwrap(), b"bad ledger");
+        assert!(redact(&mut row));
+        for name in [CACHE, BACKUP] {
+            let cache: Value = serde_json::from_slice(&fs::read(data.join(name)).unwrap()).unwrap();
+            assert_eq!(cache[GONE], row);
+        }
+    }
+
+    #[test]
+    fn sweeps_sqlite_and_backup_without_changing_live_sessions_or_usage() {
+        let temp = tempfile::tempdir().unwrap();
+        let home = temp.path();
+        let cli = home.join(".gemini/antigravity-cli");
+        let data = cli.join(PANEL_DATA_DIRS[0]);
+        let other = home.join(".cc-switch/agy/work/antigravity-cli/conversations");
+        fs::create_dir_all(cli.join("conversations")).unwrap();
+        fs::create_dir_all(other.parent().unwrap().join("brain")).unwrap();
+        fs::create_dir_all(&other).unwrap();
+        fs::write(other.join(format!("{LIVE}.pb")), [1]).unwrap();
+        fs::create_dir_all(&data).unwrap();
+        let path = data.join(LEDGER);
+        let db = Connection::open(&path).unwrap();
+        db.execute_batch(
+            "PRAGMA journal_mode = WAL;
+             CREATE TABLE ledger_meta (key TEXT PRIMARY KEY, value TEXT NOT NULL);
+             INSERT INTO ledger_meta VALUES ('schema_version', '1'), ('ledger_epoch', '1');
+             CREATE TABLE conversations (cascade_id TEXT PRIMARY KEY, lower_id TEXT NOT NULL UNIQUE,
+                 is_archived INTEGER NOT NULL, step_count INTEGER NOT NULL, write_seq INTEGER NOT NULL,
+                 updated_at_ms INTEGER NOT NULL, meta_json TEXT NOT NULL);
+             CREATE TABLE steps (cascade_id TEXT NOT NULL, pos INTEGER NOT NULL,
+                 accounting_json TEXT NOT NULL, detail_json TEXT, PRIMARY KEY (cascade_id, pos));",
+        )
+        .unwrap();
+        let meta = json!({"title":"private title", "appSource":"cli", "swarmMeta":{"title":"private swarm"}});
+        let accounting = "[1,1794124800000,0,\"M\",\"\",\"\",\"\",\"\",null,19,3,7,1,6]";
+        let details = json!({"turnPrompt":"private prompt", "turnPromptClean":"clean prompt",
+            "userPrompt":"private user prompt", "ttftSec":2});
+        for id in [GONE, LIVE] {
+            db.execute(
+                "INSERT INTO conversations VALUES (?1, ?1, 1, 1, 2, 3, ?2)",
+                params![id, meta.to_string()],
+            )
+            .unwrap();
+            db.execute(
+                "INSERT INTO steps VALUES (?1, 0, ?2, ?3)",
+                params![id, accounting, details.to_string()],
+            )
+            .unwrap();
+        }
+        drop(db);
+        let mut backup_row = meta.clone();
+        backup_row["steps"] = json!([{"turnPrompt":"old prompt", "inputTokens":19}]);
+        let backup = data.join(BACKUP);
+        fs::write(
+            &backup,
+            json!({GONE:backup_row, LIVE:backup_row}).to_string(),
+        )
+        .unwrap();
+
+        assert!(matches!(
+            sweep(home, || Ok(true)).unwrap(),
+            CacheCleanup::Pending
+        ));
+        let sources = Sources {
+            cli: true,
+            live: [LIVE.to_owned()].into(),
+            ..Default::default()
+        };
+        assert!(clean_sqlite(
+            &path.canonicalize().unwrap(),
+            &sources,
+            &BTreeSet::new(),
+            || Ok(true),
+        )
+        .unwrap()
+        .is_none());
+        let db = Connection::open(&path).unwrap();
+        let still_private: String = db
+            .query_row(
+                "SELECT meta_json FROM conversations WHERE cascade_id = ?1",
+                [GONE],
+                |row| row.get(0),
+            )
+            .unwrap();
+        assert_eq!(still_private, meta.to_string());
+        drop(db);
+        for _ in 0..2 {
+            assert!(matches!(
+                sweep(home, || Ok(false)).unwrap(),
+                CacheCleanup::Complete
+            ));
+        }
+        let db = Connection::open(&path).unwrap();
+        for id in [GONE, LIVE] {
+            let (stored_meta, stored_details, stored_accounting): (String, String, String) = db
+                .query_row(
+                    "SELECT meta_json, detail_json, accounting_json FROM conversations
+                     JOIN steps USING (cascade_id) WHERE cascade_id = ?1",
+                    [id],
+                    |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?)),
+                )
+                .unwrap();
+            assert_eq!(stored_accounting, accounting);
+            if id == GONE {
+                let mut redacted = meta.clone();
+                redacted["title"] = json!(DELETED);
+                redacted["swarmMeta"] = json!({});
+                assert_eq!(
+                    serde_json::from_str::<Value>(&stored_meta).unwrap(),
+                    redacted
+                );
+                assert_eq!(
+                    serde_json::from_str::<Value>(&stored_details).unwrap(),
+                    json!({"ttftSec":2})
+                );
+            } else {
+                assert_eq!(stored_meta, meta.to_string());
+                assert_eq!(stored_details, details.to_string());
+            }
+        }
+        let epoch: String = db
+            .query_row(
+                "SELECT value FROM ledger_meta WHERE key = 'ledger_epoch'",
+                [],
+                |row| row.get(0),
+            )
+            .unwrap();
+        assert_eq!(epoch, "2");
+        let after: Value = serde_json::from_slice(&fs::read(backup).unwrap()).unwrap();
+        assert_eq!(after[GONE]["title"], DELETED);
+        assert_eq!(after[GONE]["steps"][0], json!({"inputTokens":19}));
+        assert_eq!(after[LIVE], backup_row);
     }
 
     #[test]

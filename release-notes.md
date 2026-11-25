@@ -1,24 +1,16 @@
-# Release Notes / 发布说明 (v5.4.1)
+# Release Notes / 发布说明 (v5.4.2)
 
 ## 会话清理
 
-- 新增 **清理 Magpie 模型探测会话**, 可预览并批量删除 Magpie 独立 agy 存储中的空探测会话及其索引, 保留正常会话
-- 优先使用 `AGY_BRIDGE_GEMINI_DIR` 指定的独立存储, 未设置时使用 Magpie 默认路径
-
-## 界面
-
-- Magpie 清理按钮与刷新按钮右对齐; 窄窗口中清理选项自动换行, 最小窗口尺寸调整为 640 × 460
+- 支持 Usage Monitor 1.5.5 的 SQLite 账本和 JSON 迁移备份, 清除已删会话的标题与提问, 保留用量和费用
+- 勾选 **Usage Monitor 会话记录** 后点击 **刷新**, 可补扫已删会话
 
 ---
 
 ## Session cleanup
 
-- Add **Clean Magpie model probes** to preview and batch-delete empty probe sessions and their indexes from Magpie's separate agy store, keeping regular sessions
-- Use the separate store configured in `AGY_BRIDGE_GEMINI_DIR` when set, or Magpie's default location otherwise
-
-## Interface
-
-- Align the Magpie cleanup and Refresh buttons on the right; wrap cleanup options in narrow windows, with a minimum window size of 640 × 460
+- Support Usage Monitor 1.5.5's SQLite ledger and JSON migration backup, clearing titles and prompts for deleted sessions while keeping usage and costs
+- Select **Usage Monitor session history** and click **Refresh** to clean up previously deleted sessions
 
 ---
 

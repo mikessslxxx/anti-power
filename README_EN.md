@@ -5,9 +5,9 @@
 <h1 align="center">Anti-Power</h1>
 
 <p align="center">
-  <a href="https://github.com/mikessslxxx/anti-power/releases"><img src="https://img.shields.io/badge/Version-v5.4.1-blue.svg" alt="Version"></a>
-  <img src="https://img.shields.io/badge/Antigravity_App-2.34.0-green.svg" alt="Antigravity App">
-  <img src="https://img.shields.io/badge/Antigravity_CLI-1.5.14-green.svg" alt="Antigravity CLI">
+  <a href="https://github.com/mikessslxxx/anti-power/releases"><img src="https://img.shields.io/badge/Version-v5.4.2-blue.svg" alt="Version"></a>
+  <img src="https://img.shields.io/badge/Antigravity_App-2.35.1-green.svg" alt="Antigravity App">
+  <img src="https://img.shields.io/badge/Antigravity_CLI-1.5.16-green.svg" alt="Antigravity CLI">
 </p>
 
 <p align="center">
@@ -24,7 +24,7 @@
 - Flags index-only leftovers (records left behind after another tool removes the session files), with an option to hide or delete them
 - Previews and clears empty model probe sessions in Magpie's separate store
 
-Verified on macOS with Antigravity App 2.34.0 and Antigravity CLI 1.5.14. The Windows and Linux builds are untested. Antigravity IDE (`~/.gemini/antigravity-ide`) is not supported.
+Verified on macOS with Antigravity App 2.35.1 and Antigravity CLI 1.5.16. The Windows and Linux builds are untested. Antigravity IDE (`~/.gemini/antigravity-ide`) is not supported.
 
 ## What gets cleaned
 
@@ -56,7 +56,7 @@ Three options at the top of the window are off by default, and the choice is rem
 
 - **Antigravity App browser cache**: empties `Cache/` and `Code Cache/` in the Antigravity App data folder. They cannot be filtered by session and may hold session IDs; the Antigravity App rebuilds them, so the next launch is a little slower.
 - **CC Switch sync records**: removes sync progress (`session_log_sync`) from `cc-switch.db` and `backups/*.db` under `~/.cc-switch/` for selected sessions and sessions with no trace left in their source, then compacts each database (skipping the live database while CC Switch is open; refresh after it exits to recheck). Usage and cost history contains no conversation text and is kept.
-- **Usage Monitor session history**: clears cached titles and prompts for App and CLI sessions with no local copy left, keeping token and cost history. Removes the conversation entry when the installed plugin has a matching independent usage record, or leaves a redacted placeholder otherwise. Standalone Usage Monitor can stay open (local sessions are deleted immediately; refresh after it exits to finish cache cleanup).
+- **Usage Monitor session history**: clears titles and prompts for App and CLI sessions with no local copy left across the SQLite ledger, JSON migration backup, and legacy JSON cache, keeping token and cost history. Quit Antigravity clients and standalone Usage Monitor, select this option, and click **Refresh** to clean up previously deleted sessions.
 
 App data, CC Switch, and Usage Monitor cleanup runs after session deletion is committed; if it fails, the session stays deleted and the result lists what was not cleaned.
 

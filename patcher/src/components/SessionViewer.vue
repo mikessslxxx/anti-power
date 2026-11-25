@@ -30,7 +30,7 @@
           <input v-model="hideIndexOnly" type="checkbox" :disabled="deletionPending" />
           <span>{{ $t('sessionViewer.hideIndexOnly') }}</span>
         </label>
-        <button class="sv-btn" :disabled="actionsBusy" @click="scanSessions">
+        <button class="sv-btn" :disabled="actionsBusy" @click="scanSessions(cleanOptions.usageMonitor)">
           <svg :class="{ spinning: isScanning }" viewBox="0 0 16 16" aria-hidden="true"><path d="M13.25 8A5.25 5.25 0 1 1 11.7 4.3" /><path d="M13.25 2.5v2.75H10.5" /></svg>
           <span>{{ $t('sessionViewer.refresh') }}</span>
         </button>
@@ -432,7 +432,7 @@ function errorMessage(error: unknown): string {
   return t('app.error.unknown');
 }
 
-async function scanSessions() {
+async function scanSessions(sweepUsageMonitor = false) {
   if (isScanning.value) return;
   isScanning.value = true;
   void refreshVersions();
@@ -444,7 +444,7 @@ async function scanSessions() {
       warnings: string[];
       ccSwitchVerificationPending: boolean;
       usageMonitorCleanupPending: boolean;
-    }>('scan_sessions');
+    }>('scan_sessions', { sweepUsageMonitor });
     sessions.value = result.sessions;
     magpieStoreAvailable.value = result.magpieStoreAvailable;
     scanWarnings.value = result.warnings;

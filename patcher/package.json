@@ -3,7 +3,7 @@
   "description": "Local session manager for the Antigravity App and Antigravity CLI",
   "private": true,
   "license": "GPL-3.0-only",
-  "version": "5.4.1",
+  "version": "5.4.2",
   "type": "module",
   "scripts": {
     "dev": "vite",

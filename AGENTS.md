@@ -17,7 +17,7 @@ Anti-Power installs or uninstalls the official upstream Usage Monitor release.
   - `index_only.rs`: matching and leftover index-only target selection and validation
   - `magpie_probes.rs`: Magpie agy store resolution and empty probe validation
   - `cc_switch.rs`: CC Switch sync record cleanup
-  - `usage_monitor.rs`: Usage Monitor attachment protection and session cache cleanup
+  - `usage_monitor.rs`: Usage Monitor attachment protection and session data cleanup
   - `cleanup_extras.rs`: Antigravity App window state, browser caches, and usage ledger cleanup
   - `usage_ledger.rs`: folding removed sessions into Anti-Power Usage's deleted totals
   - `client_versions.rs`: installed App and CLI versions for the session source selector
@@ -39,7 +39,7 @@ Magpie cleanup uses the separate `antigravity-cli/` store (see README), sharing 
 
 A session is identified by its source and UUID. Under each root, a session can appear in `conversations/`, `brain/`, `annotations/`, `presence/`, `conversation_summaries.db` (summaries, FTS, parents), the summary index, `cache/last_conversations.json`, `cache/conversation_metadata.json`, `history.jsonl` (the Antigravity CLI prompt history), and plugin `sidecar_data/`. Outside the stores, the Antigravity App keeps window state in `app_storage.json`, and CC Switch keeps sync progress in `~/.cc-switch/cc-switch.db` and its backups. The README lists what cleanup removes and what it leaves.
 
-Last checked on macOS against Antigravity App 2.34.0 and Antigravity CLI 1.5.14. Antigravity IDE (`~/.gemini/antigravity-ide`) is out of scope.
+Last checked on macOS against Antigravity App 2.35.1 and Antigravity CLI 1.5.16. Antigravity IDE (`~/.gemini/antigravity-ide`) is out of scope.
 
 ## Cleanup rules
 

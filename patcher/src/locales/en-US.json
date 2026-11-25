@@ -65,7 +65,7 @@
         "optionCcSwitch": "CC Switch sync records",
         "optionCcSwitchHint": "Remove sync records from ~/.cc-switch and its backups for selected and locally removed sessions, keeping usage and cost history; CC Switch can stay open",
         "optionUsageMonitor": "Usage Monitor session history",
-        "optionUsageMonitorHint": "Clear cached titles and prompts for sessions with no local copy left, keeping token counts and costs; remove the entry when a matching independent usage record exists",
+        "optionUsageMonitorHint": "Clear titles and prompts for sessions with no local copy left, keeping token counts and costs; select and click Refresh to clean up previously deleted sessions",
         "orphanIndexesDeleted": "Also cleared {count} leftover index entry | Also cleared {count} leftover index entries",
         "orphanScanFailed": "Skipping leftover indexes because they could not be checked: {error}",
         "projectDir": "Project",
