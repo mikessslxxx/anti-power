@@ -84,14 +84,14 @@ defineProps<{
 
 defineEmits(['openAbout', 'openPlugin']);
 
-const isMaximized = ref(false);
-const isDark = ref(true);
-let appWindow: any = null;
-let unlistenResize: (() => void) | null = null;
-
 const THEME_STORAGE_KEY = 'anti-power-theme';
 const THEME_DARK = 'dark';
 const THEME_LIGHT = 'light';
+
+const isMaximized = ref(false);
+const isDark = ref(localStorage.getItem(THEME_STORAGE_KEY) === THEME_DARK);
+let appWindow: any = null;
+let unlistenResize: (() => void) | null = null;
 
 onMounted(async () => {
   try {
@@ -106,8 +106,6 @@ onMounted(async () => {
   } catch (error) {
     console.error('TitleBar init error:', error);
   }
-
-  initTheme();
 });
 
 onUnmounted(() => {
@@ -140,32 +138,11 @@ const closeWindow = async () => {
   if (win) await win.close();
 };
 
-/**
- * Restore the saved theme and default to dark for new installs
- */
-const initTheme = () => {
-  const savedTheme = localStorage.getItem(THEME_STORAGE_KEY);
-
-  if (savedTheme) {
-    isDark.value = savedTheme === THEME_DARK;
-  } else {
-    // Match the original dark theme by default
-    isDark.value = true;
-  }
-
-  applyTheme();
-};
-
-/**
- * The data-theme attribute switches the CSS color tokens
- */
 const applyTheme = () => {
-  if (isDark.value) {
-    document.documentElement.removeAttribute('data-theme');
-  } else {
-    document.documentElement.setAttribute('data-theme', 'light');
-  }
+  document.documentElement.dataset.theme = isDark.value ? THEME_DARK : THEME_LIGHT;
 };
+
+applyTheme();
 
 /**
  * Persist the theme switch so it survives a restart

@@ -8,6 +8,7 @@
   <a href="https://github.com/mikessslxxx/anti-power/releases"><img src="https://img.shields.io/badge/版本-v5.4.3-blue.svg" alt="版本"></a>
   <img src="https://img.shields.io/badge/Antigravity_App-2.35.2-green.svg" alt="Antigravity App">
   <img src="https://img.shields.io/badge/Antigravity_CLI-1.5.18-green.svg" alt="Antigravity CLI">
+  <a href="https://linux.do/"><img src="https://img.shields.io/badge/社区-LINUX_DO-f0a500.svg" alt="LINUX DO"></a>
 </p>
 
 <p align="center">
@@ -116,6 +117,7 @@ Google Antigravity 已内置 LaTeX 和 Mermaid 渲染, 补丁功能已移除. [v
 - [@Sophomoresty](https://github.com/Sophomoresty)
 - [@Wusir7355608](https://github.com/Wusir7355608)
 - [@aiaiads](https://github.com/aiaiads)
+- 社区友链: [LINUX DO](https://linux.do/)
 
 ## 许可证
 
