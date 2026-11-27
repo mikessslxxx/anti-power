@@ -39,17 +39,17 @@ Magpie 清理使用 README 所述独立 `antigravity-cli/` 存储, 共用 CLI �
 
 会话由来源和 UUID 共同确定. 在每个根目录下, 一个会话可能出现在 `conversations/`, `brain/`, `annotations/`, `presence/`, `conversation_summaries.db` (摘要, 全文索引, 父子关系), 摘要索引, `cache/last_conversations.json`, `cache/conversation_metadata.json`, `history.jsonl` (Antigravity CLI 的输入历史) 和插件的 `sidecar_data/`. 存储目录之外, Antigravity App 在 `app_storage.json` 中保存窗口状态, CC Switch 在 `~/.cc-switch/cc-switch.db` 及其备份中保存同步进度. 清理和保留的范围见 README.
 
-最近在 macOS 上核对的版本是 Antigravity App 2.35.1 和 Antigravity CLI 1.5.16. Antigravity IDE (`~/.gemini/antigravity-ide`) 不在范围内.
+最近在 macOS 上核对的版本是 Antigravity App 2.35.2 和 Antigravity CLI 1.5.18. Antigravity IDE (`~/.gemini/antigravity-ide`) 不在范围内.
 
 ## 清理规则
 
 - Antigravity App, Antigravity CLI 或 Antigravity IDE 运行时拒绝清理. CC Switch 和 Usage Monitor 可保持运行 (Usage Monitor 运行时暂留待清理记录, 退出后下次扫描再清理缓存).
-- 在 Usage Monitor 标准数据目录中发现迁移归档且源 `.db` 已移除时拒绝清理, 提交前出现新归档则回滚, 以保留源端附件.
+- 在 Usage Monitor 标准数据目录中发现迁移归档或保护标记且源 `.db` 已移除时拒绝清理, 提交前出现新归档或保护标记则回滚, 以保留源端附件.
 - 不跟随存储目录内的符号链接.
 - 先把待删文件移入 `.anti-power-clean-*`, 并在索引事务中记录提交. 清理中断后, 还原尚未提交的文件, 完成已提交的清理. 扫描时恢复失败只给出警告, 仍然列出会话.
 - 每轮按存储目录单遍清理 (一次事务, 一次全文索引重建, 一次 `VACUUM`); 清理 App 和 CLI 会话时, 整批失败则逐条重试 (存储级错误除外).
 - Magpie 清理还须退出 Magpie, 并在事务内复核待删会话, 任一不符即中止整批清理.
-- 所选会话删除成功后, 清理其他来源的同 ID 仅索引记录及确认框列出的历史残留索引 (提交前跨已知本地来源复核会话文件和迁移归档).
+- 所选会话删除成功后, 清理其他来源的同 ID 仅索引记录及确认框列出的历史残留索引 (提交前跨已知本地来源复核会话文件, 迁移归档和保护标记).
 - 摘要索引格式无法识别时直接失败, 不做任何修改.
 - 存储目录外的数据在存储提交后通过持久化收据 (`.anti-power-extras-*`, `.anti-power-sync-pending`) 清理, 未完成项在后续扫描时重试, 失败作为警告返回.
 - 子代理会话 (`nesting_depth > 0`) 随所属会话删除, fork 保留.

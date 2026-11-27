@@ -5,9 +5,9 @@
 <h1 align="center">Anti-Power</h1>
 
 <p align="center">
-  <a href="https://github.com/mikessslxxx/anti-power/releases"><img src="https://img.shields.io/badge/版本-v5.4.2-blue.svg" alt="版本"></a>
-  <img src="https://img.shields.io/badge/Antigravity_App-2.35.1-green.svg" alt="Antigravity App">
-  <img src="https://img.shields.io/badge/Antigravity_CLI-1.5.16-green.svg" alt="Antigravity CLI">
+  <a href="https://github.com/mikessslxxx/anti-power/releases"><img src="https://img.shields.io/badge/版本-v5.4.3-blue.svg" alt="版本"></a>
+  <img src="https://img.shields.io/badge/Antigravity_App-2.35.2-green.svg" alt="Antigravity App">
+  <img src="https://img.shields.io/badge/Antigravity_CLI-1.5.18-green.svg" alt="Antigravity CLI">
 </p>
 
 <p align="center">
@@ -24,7 +24,7 @@
 - 标出只剩索引的残留记录 (其他工具删掉会话文件后留下的), 可隐藏或删除
 - 预览并批量清理 Magpie 独立存储中的空模型探测会话
 
-已在 macOS 上用 Antigravity App 2.35.1 和 Antigravity CLI 1.5.16 核对. Windows 和 Linux 安装包尚未实测. 不支持 Antigravity IDE (`~/.gemini/antigravity-ide`).
+已在 macOS 上用 Antigravity App 2.35.2 和 Antigravity CLI 1.5.18 核对. Windows 和 Linux 安装包尚未实测. 不支持 Antigravity IDE (`~/.gemini/antigravity-ide`).
 
 ## 清理范围
 
@@ -47,7 +47,7 @@
 - 子代理会话随所属会话一起删除, `/fork` 出的会话独立保留.
 - 删除完整会话后一并清理其他来源中同 ID 的仅索引记录; 多个来源都有完整副本时需分别勾选.
 - 删除前扫描各本地来源, 将无会话文件, 附件和已知迁移归档的历史残留索引计入确认框, 并在删除成功后一并清理 (无法完成核对时跳过).
-- 在 Usage Monitor 标准数据目录中检测到完整迁移归档时拒绝删除源端残留, 以保留迁入会话可能引用的附件 (不检查自定义 `--data-dir`, 删除前请确认附件未被引用).
+- 源会话的 `.db` 已移除且 Usage Monitor 标准数据目录仍有迁移归档或保护标记时, 拒绝删除源端残留, 以保留迁入会话可能引用的附件 (不检查自定义 `--data-dir`, 删除前请确认附件未被引用).
 - Antigravity App 数据目录在 macOS 上是 `~/Library/Application Support/Antigravity`, Windows 上是 `%APPDATA%\Antigravity`, Linux 上是 `~/.config/Antigravity`.
 - 不清理运行日志 (`log/`), 也不清理写到 `/tmp` 或项目目录里的文件.
 - 清理后会压缩 `conversation_summaries.db` 以清除已删记录碎片 (若正被其他工具读取则延至下次清理); 已删文件不做磁盘级擦除.
@@ -74,7 +74,7 @@
 
 通过标题栏的 **Usage Monitor** 按钮可将 [Usage Monitor 最新正式版](https://github.com/yuhuan-dev/antigravity-usage-monitor/releases/latest) 安装到 `~/.gemini/config/plugins/usage-monitor` 或卸载. 在 Antigravity 的 **Customizations → Installed** 中启用后即可查看缓存命中率和账号额度. 价格和 CLI 状态栏由插件自身管理 (若启用了 CLI 状态栏, 卸载前请先在插件内关闭).
 
-安装时会为官方插件添加两个 Anti-Power 按钮: 面板顶栏打开当前本地会话, 设置页打开 **Usage Monitor** 弹窗. 插件通过内置 ZIP 更新时会重新应用按钮补丁.
+安装时会为官方插件添加两个 Anti-Power 按钮, 可从面板顶栏打开当前本地会话, 或从 **控制中心 → 常规** 打开 **Usage Monitor** 弹窗. 插件通过内置 ZIP 更新时会重新应用按钮补丁.
 
 macOS 用户可先退出 Antigravity, 再在 **Usage Monitor** 弹窗点击 **启动 Antigravity 并启用挂载**, 使用顶栏或输入框中的用量胶囊.
 

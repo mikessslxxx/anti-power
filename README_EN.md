@@ -5,9 +5,9 @@
 <h1 align="center">Anti-Power</h1>
 
 <p align="center">
-  <a href="https://github.com/mikessslxxx/anti-power/releases"><img src="https://img.shields.io/badge/Version-v5.4.2-blue.svg" alt="Version"></a>
-  <img src="https://img.shields.io/badge/Antigravity_App-2.35.1-green.svg" alt="Antigravity App">
-  <img src="https://img.shields.io/badge/Antigravity_CLI-1.5.16-green.svg" alt="Antigravity CLI">
+  <a href="https://github.com/mikessslxxx/anti-power/releases"><img src="https://img.shields.io/badge/Version-v5.4.3-blue.svg" alt="Version"></a>
+  <img src="https://img.shields.io/badge/Antigravity_App-2.35.2-green.svg" alt="Antigravity App">
+  <img src="https://img.shields.io/badge/Antigravity_CLI-1.5.18-green.svg" alt="Antigravity CLI">
 </p>
 
 <p align="center">
@@ -24,7 +24,7 @@
 - Flags index-only leftovers (records left behind after another tool removes the session files), with an option to hide or delete them
 - Previews and clears empty model probe sessions in Magpie's separate store
 
-Verified on macOS with Antigravity App 2.35.1 and Antigravity CLI 1.5.16. The Windows and Linux builds are untested. Antigravity IDE (`~/.gemini/antigravity-ide`) is not supported.
+Verified on macOS with Antigravity App 2.35.2 and Antigravity CLI 1.5.18. The Windows and Linux builds are untested. Antigravity IDE (`~/.gemini/antigravity-ide`) is not supported.
 
 ## What gets cleaned
 
@@ -47,7 +47,7 @@ Cleanup removes the following data by source and session ID:
 - Subagent conversations are removed with their parent. Sessions created by `/fork` are kept.
 - Deleting a complete session also clears matching index-only records in other sources; when several sources have complete copies, select each copy to delete.
 - Scans known local stores before deletion for leftover indexes with no session files, attachments, or migration archive, showing the count in the confirmation and clearing them once deletion succeeds (skipped if the check cannot finish).
-- Refuses to delete source leftovers after a full Usage Monitor migration in a standard data directory so migrated sessions keep their attachments (custom `--data-dir` paths are not checked; confirm attachments are unused before deleting).
+- Refuses to delete source leftovers when the source `.db` is gone and a standard Usage Monitor data directory still holds a migration archive or protection marker, keeping attachments for migrated sessions (for custom `--data-dir` paths, confirm attachments are unused before deleting).
 - The Antigravity App data folder is `~/Library/Application Support/Antigravity` on macOS, `%APPDATA%\Antigravity` on Windows, and `~/.config/Antigravity` on Linux.
 - Runtime logs (`log/`) and files written to `/tmp` or project folders are left untouched.
 - Compacts `conversation_summaries.db` after cleanup to clear deleted-row fragments (deferred if another tool is reading it). Deleted files are not wiped at the disk level.
@@ -74,7 +74,7 @@ Uses `antigravity-cli/` under `AGY_BRIDGE_GEMINI_DIR` (absolute path) when set, 
 
 Use the **Usage Monitor** button in the title bar to install the latest official [Usage Monitor release](https://github.com/yuhuan-dev/antigravity-usage-monitor/releases/latest) into `~/.gemini/config/plugins/usage-monitor`, or uninstall it. Enable the plugin in Antigravity under **Customizations → Installed** to view cache hit rates and account quotas. Prices and the CLI status line are managed in Usage Monitor (if enabled, turn the CLI status line off there before uninstalling).
 
-Installation adds two Anti-Power buttons to the official plugin: the panel header opens the current local session, and Settings opens the **Usage Monitor** dialog. The built-in ZIP updater reapplies the buttons.
+Installation adds two Anti-Power buttons to the official plugin: the panel header opens the current local session, and **Control Center → General** opens the **Usage Monitor** dialog. The built-in ZIP updater reapplies the buttons.
 
 On macOS, quit Antigravity and choose **Launch Antigravity with debugging** in the **Usage Monitor** dialog to use the top bar or composer overlay.
 

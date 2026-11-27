@@ -1,16 +1,14 @@
-# Release Notes / 发布说明 (v5.4.2)
+# Release Notes / 发布说明 (v5.4.3)
 
 ## 会话清理
 
-- 支持 Usage Monitor 1.5.5 的 SQLite 账本和 JSON 迁移备份, 清除已删会话的标题与提问, 保留用量和费用
-- 勾选 **Usage Monitor 会话记录** 后点击 **刷新**, 可补扫已删会话
+- 识别 Usage Monitor 1.5.6 清理迁移归档后保留的 `.protected.json` 保护标记, 拒绝删除源端残留并跳过其历史残留索引, 保留迁入会话可能引用的附件
 
 ---
 
 ## Session cleanup
 
-- Support Usage Monitor 1.5.5's SQLite ledger and JSON migration backup, clearing titles and prompts for deleted sessions while keeping usage and costs
-- Select **Usage Monitor session history** and click **Refresh** to clean up previously deleted sessions
+- Recognize `.protected.json` markers left by Usage Monitor 1.5.6 after pruning migration archives, refusing to delete source leftovers and skipping their leftover indexes so migrated sessions keep their attachments
 
 ---
 

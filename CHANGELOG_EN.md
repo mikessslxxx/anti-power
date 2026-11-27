@@ -4,6 +4,13 @@
 
 ---
 
+## v5.4.3 (2026-11-27)
+
+### Session cleanup
+- Recognize `.protected.json` markers left by Usage Monitor 1.5.6 after pruning migration archives, refusing to delete source leftovers and skipping their leftover indexes so migrated sessions keep their attachments
+
+---
+
 ## v5.4.2 (2026-11-25)
 
 ### Session cleanup

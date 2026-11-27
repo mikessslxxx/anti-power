@@ -534,7 +534,7 @@ fn clean_records(
     changed
 }
 
-/// Migration archives Usage Monitor keeps for these sessions, as (lowercase ID, archive path)
+/// Migration archives and post-prune protection markers, as (lowercase ID, path)
 pub(super) fn migration_archives(
     root: &Path,
     ids: &HashSet<String>,
@@ -570,24 +570,26 @@ pub(super) fn migration_archives(
         for entry in fs::read_dir(dir)? {
             let entry = entry?;
             let name = entry.file_name();
-            let Some((id, _)) = name
-                .to_str()
-                .and_then(|name| name.strip_suffix(".db"))
-                .and_then(|stem| stem.split_once('_'))
+            let Some(name) = name.to_str() else {
+                continue;
+            };
+            let name = name.to_ascii_lowercase();
+            let Some(id) = name
+                .strip_suffix(".protected.json")
+                .or_else(|| name.strip_suffix(".db")?.split_once('_').map(|(id, _)| id))
+                .filter(|id| ids.contains(*id))
             else {
                 continue;
             };
-            let id = id.to_ascii_lowercase();
-            if ids.contains(&id) && entry.file_type()?.is_file() {
-                archives.insert((id, entry.path()));
+            if entry.file_type()?.is_file() {
+                archives.insert((id.to_owned(), entry.path()));
             }
         }
     }
     Ok(archives)
 }
 
-/// A full move archives the source, removes its `.db`, and gives the destination a new UUID that
-/// can still reference the source brain. A failed move keeps the source `.db` beside the archive
+/// Only a completed move removes the source `.db`; the new UUID can still use the source brain
 pub(super) fn protect_moved_attachments(
     root: &Path,
     archives: &BTreeSet<(String, PathBuf)>,

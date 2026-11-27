@@ -1694,8 +1694,8 @@ mod tests {
             let archive = archives.join(source);
             fs::create_dir_all(&archive).unwrap();
             fs::write(
-                archive.join(format!("{id}_2026-11-24T00-00-00-000Z.db")),
-                b"snapshot",
+                archive.join(format!("{id}.protected.json")),
+                format!(r#"{{"cascadeId":"{id}","prunedAtMs":1795478400000}}"#),
             )
             .unwrap();
             let brain = cli.join("brain").join(id);

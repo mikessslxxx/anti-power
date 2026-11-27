@@ -39,17 +39,17 @@ Magpie cleanup uses the separate `antigravity-cli/` store (see README), sharing 
 
 A session is identified by its source and UUID. Under each root, a session can appear in `conversations/`, `brain/`, `annotations/`, `presence/`, `conversation_summaries.db` (summaries, FTS, parents), the summary index, `cache/last_conversations.json`, `cache/conversation_metadata.json`, `history.jsonl` (the Antigravity CLI prompt history), and plugin `sidecar_data/`. Outside the stores, the Antigravity App keeps window state in `app_storage.json`, and CC Switch keeps sync progress in `~/.cc-switch/cc-switch.db` and its backups. The README lists what cleanup removes and what it leaves.
 
-Last checked on macOS against Antigravity App 2.35.1 and Antigravity CLI 1.5.16. Antigravity IDE (`~/.gemini/antigravity-ide`) is out of scope.
+Last checked on macOS against Antigravity App 2.35.2 and Antigravity CLI 1.5.18. Antigravity IDE (`~/.gemini/antigravity-ide`) is out of scope.
 
 ## Cleanup rules
 
 - Refuse session cleanup while the Antigravity App, Antigravity CLI, or Antigravity IDE is running. CC Switch and Usage Monitor can stay open (cache cleanup stays pending until the next scan after Usage Monitor exits).
-- Refuse cleanup when a standard Usage Monitor data directory has a migration archive and the source `.db` is gone, and roll back if a new archive appears before commit, to preserve source attachments.
+- Refuse cleanup when a standard Usage Monitor data directory has a migration archive or protection marker and the source `.db` is gone, and roll back if a new one appears before commit, to preserve source attachments.
 - Never follow symlinks inside a store.
 - Stage files in `.anti-power-clean-*` and record the commit in the index transaction. After an interruption, restore uncommitted files and finish committed deletions. A scan reports a failed recovery as a warning and still lists sessions.
 - Clean each store in one pass per round (one transaction, one FTS rebuild, one `VACUUM`); for App and CLI sessions, retry individually on batch failure unless the error is store-wide.
 - Magpie cleanup also requires Magpie to be closed, rechecks confirmed probes in the store transaction, and aborts the batch if any no longer qualifies.
-- After a selected deletion succeeds, clear matching index-only records in other sources and previewed leftover indexes (rechecking artifacts and migration archives across known local stores before commit).
+- After a selected deletion succeeds, clear matching index-only records in other sources and previewed leftover indexes (rechecking artifacts, migration archives, and protection markers across known local stores before commit).
 - Fail without changes when a summary index has an unknown layout.
 - Clean data outside the stores after the stores commit via persisted receipts (`.anti-power-extras-*`, `.anti-power-sync-pending`), retrying unfinished work on later scans and reporting failures as warnings.
 - Nested agent runs (`nesting_depth > 0`) go with their parent. Forks stay.
